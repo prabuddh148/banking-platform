@@ -1,0 +1,14 @@
+﻿package com.banking.transaction.saga;
+
+public enum SagaStep {
+    INIT,
+    BALANCE_RESERVED,
+    FRAUD_CHECK_SENT,
+    FRAUD_APPROVED,
+    DEBIT_COMPLETED,
+    CREDIT_COMPLETED,
+    COMPLETED,
+    COMPENSATION_RELEASE_BALANCE,
+    COMPENSATION_REVERSE_DEBIT,
+    FAILED
+}

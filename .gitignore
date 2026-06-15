@@ -1,0 +1,44 @@
+# Maven build output
+target/
+*.jar
+*.war
+*.ear
+*.class
+
+# Maven wrapper jar
+.mvn/wrapper/maven-wrapper.jar
+
+# Logs
+*.log
+spring-shell.log
+
+# IDE - IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# IDE - VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment / Secrets - NEVER commit these
+.env
+.env.local
+.env.production
+.env.staging
+*.pem
+*.key
+*.p12
+*.jks
+application-prod.yml
+application-production.yml
+application-staging.yml
+
+# Docker volumes (runtime data)
+docker/volumes/
+docker/data/

@@ -1,0 +1,86 @@
+﻿version: '3.8'
+
+# =============================================================================
+# Banking Platform - Docker Compose Development Override
+# =============================================================================
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile app up
+#
+# This overlay:
+#   - Enables remote JVM debugging on ports 5005-5010 for each service
+#   - Mounts locally-built JARs from each service's target/ directory
+#   - Sets LOG_LEVEL=DEBUG for verbose logging
+# =============================================================================
+
+services:
+
+  api-gateway:
+    environment:
+      JAVA_OPTS: "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 -Xmx512m -Xms256m -XX:+UseG1GC"
+      LOG_LEVEL: DEBUG
+      SPRING_PROFILES_ACTIVE: docker,debug
+    ports:
+      - "8080:8080"
+      - "5005:5005"
+    volumes:
+      - ../api-gateway/target:/app/target:ro
+
+  account-service:
+    environment:
+      JAVA_OPTS: "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5006 -Xmx512m -Xms256m -XX:+UseG1GC"
+      LOG_LEVEL: DEBUG
+      SPRING_PROFILES_ACTIVE: docker,debug
+    ports:
+      - "8081:8081"
+      - "5006:5006"
+    volumes:
+      - ../account-service/target:/app/target:ro
+
+  transaction-service:
+    environment:
+      JAVA_OPTS: "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5007 -Xmx512m -Xms256m -XX:+UseG1GC"
+      LOG_LEVEL: DEBUG
+      SPRING_PROFILES_ACTIVE: docker,debug
+    ports:
+      - "8082:8082"
+      - "5007:5007"
+    volumes:
+      - ../transaction-service/target:/app/target:ro
+
+  fraud-service:
+    environment:
+      JAVA_OPTS: "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5008 -Xmx512m -Xms256m -XX:+UseG1GC"
+      LOG_LEVEL: DEBUG
+      SPRING_PROFILES_ACTIVE: docker,debug
+    ports:
+      - "8083:8083"
+      - "5008:5008"
+    volumes:
+      - ../fraud-service/target:/app/target:ro
+
+  notification-service:
+    environment:
+      JAVA_OPTS: "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5009 -Xmx512m -Xms256m -XX:+UseG1GC"
+      LOG_LEVEL: DEBUG
+      SPRING_PROFILES_ACTIVE: docker,debug
+    ports:
+      - "8084:8084"
+      - "5009:5009"
+    volumes:
+      - ../notification-service/target:/app/target:ro
+
+  audit-service:
+    environment:
+      JAVA_OPTS: "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5010 -Xmx512m -Xms256m -XX:+UseG1GC"
+      LOG_LEVEL: DEBUG
+      SPRING_PROFILES_ACTIVE: docker,debug
+    ports:
+      - "8085:8085"
+      - "5010:5010"
+    volumes:
+      - ../audit-service/target:/app/target:ro
+
+  kafka:
+    environment:
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+      KAFKA_LOG4J_ROOT_LOGLEVEL: WARN
