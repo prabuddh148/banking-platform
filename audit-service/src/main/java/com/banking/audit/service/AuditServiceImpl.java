@@ -72,7 +72,7 @@ public class AuditServiceImpl implements AuditService {
     public PagedResponse<AuditLogResponse> getAuditLogsByActor(UUID actorId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
         Page<AuditLog> auditLogs = auditLogRepository.findByActorIdOrderByRecordedAtDesc(actorId, pageable);
-          return toPagedResponse(auditLogs);
+        return toPagedResponse(auditLogs);
     }
 
     @Override
