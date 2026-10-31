@@ -1,0 +1,2000 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0}[hidden]{display:none!important}img{max-width:100%}</style>
+<title>Banking Platform Recap</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one cinema-style player (stage + captions + controls), then chapters and a clickable transcript. Single dark look on purpose, like a video screen. */
+:root{
+  --bg:#0e1316; --panel:#151c20; --panel2:#1b242a; --line:#2a363d;
+  --ink:#e7edf0; --muted:#97a8b0; --faint:#62737b;
+  --gold:#e3b04b; --gold-soft:rgba(227,176,75,.13); --gold-ink:#1a1405;
+  --blue:#86b7e8; --blue-soft:rgba(134,183,232,.12);
+  --ok:#6fc89c; --warn:#e8b552; --bad:#ec7f6f; --bad-soft:rgba(236,127,111,.14);
+  --code:#0a0f12; --tk-k:#cf9ff7; --tk-s:#a9d48c; --tk-n:#f2a07b;
+  --f-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",Consolas,"Courier New",monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 64px}
+.wrap{max-width:1120px;margin:0 auto;display:grid;gap:28px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+p{margin:0}
+code,.mono{font-family:var(--f-mono)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+/* page header */
+.top{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:12px}
+.top h1{font-size:clamp(24px,3.4vw,34px);font-weight:800}
+.top h1 span{color:var(--gold)}
+.top p{color:var(--muted);font-size:14px}
+.kbd{font-family:var(--f-mono);font-size:12px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--ink)}
+
+/* player */
+.player{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.player:fullscreen{border-radius:0;border:0;justify-content:center;background:var(--bg)}
+.stage{display:grid;min-height:560px;position:relative;isolation:isolate;
+  background:radial-gradient(120% 90% at 85% 0%,rgba(134,183,232,.07),transparent 60%),radial-gradient(90% 80% at 0% 100%,rgba(227,176,75,.06),transparent 60%),var(--panel)}
+.player:fullscreen .stage{flex:1;overflow:auto}
+.cap,.prog,.ctrl{position:relative;z-index:2}
+.prog,.ctrl{background:var(--panel)}
+.vrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;flex-basis:100%;padding:2px 6px 0;font-size:12px;color:var(--muted)}
+.vrow select{font:inherit;font-size:12px;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 6px;max-width:100%}
+.scene{grid-area:1/1;min-width:0;padding:clamp(18px,3.2vw,40px);display:flex;flex-direction:column;gap:18px;
+  opacity:0;visibility:hidden;transition:opacity .45s ease,visibility .45s}
+.scene.active{opacity:1;visibility:visible}
+.sc-head{display:grid;gap:4px}
+.eyebrow{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold)}
+.sc-head h2{font-size:clamp(22px,2.9vw,32px);font-weight:700}
+[data-at]{opacity:0;transform:translateY(10px);transition:opacity .5s ease,transform .5s ease,border-color .35s,background-color .35s,box-shadow .35s}
+[data-at].show{opacity:1;transform:none}
+.muted{color:var(--muted)}
+
+/* play overlay */
+.overlay{position:absolute;inset:0;display:grid;place-items:center;background:rgba(14,19,22,.55);backdrop-filter:blur(2px);z-index:5;border:0;cursor:pointer;width:100%}
+.overlay span{display:flex;align-items:center;gap:12px;background:var(--gold);color:var(--gold-ink);font-weight:600;font-size:17px;padding:14px 26px 14px 20px;border-radius:999px;box-shadow:0 10px 40px rgba(0,0,0,.45)}
+.overlay svg{width:22px;height:22px}
+
+/* captions */
+.cap{border-top:1px solid var(--line);background:var(--panel2);padding:14px clamp(14px,2.4vw,24px);min-height:6.2em;display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start}
+.cap-tag{font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);border:1px solid var(--gold);border-radius:4px;padding:2px 6px;margin-top:4px}
+.cap-text{font-size:clamp(15px,1.65vw,18px);line-height:1.5;max-width:75ch;transition:opacity .25s}
+.cap-text.fade{opacity:0}
+
+/* progress + controls */
+.prog{display:flex;gap:3px;padding:12px 14px 4px}
+.seg{flex-basis:0;height:7px;border:0;padding:0;border-radius:2px;background:var(--line);position:relative;overflow:hidden;cursor:pointer}
+.seg i{position:absolute;inset:0 auto 0 0;width:0;background:var(--gold)}
+.seg:hover{background:#34434b}
+.ctrl{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 10px 12px}
+.ib{display:inline-grid;place-items:center;width:38px;height:38px;border-radius:8px;border:1px solid transparent;background:transparent;cursor:pointer;color:var(--ink)}
+.ib:hover{background:var(--panel2);border-color:var(--line)}
+.ib svg{width:18px;height:18px}
+.ib.main{background:var(--gold);color:var(--gold-ink);width:44px;height:44px;border-radius:50%}
+.ib.main svg{width:20px;height:20px}
+.time{font-family:var(--f-mono);font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;margin-left:6px}
+.where{font-size:13px;color:var(--ink);margin-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 140px}
+.pill{font-family:var(--f-mono);font-size:12px;border:1px solid var(--line);background:transparent;border-radius:999px;padding:6px 11px;cursor:pointer}
+.pill:hover{border-color:var(--muted)}
+.pill[aria-pressed="true"]{border-color:var(--gold);color:var(--gold)}
+.pill:disabled{opacity:.4;cursor:not-allowed}
+
+/* shared bits */
+.node{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-family:var(--f-mono);font-size:13px;text-align:center}
+.node small{display:block;font-family:var(--f-body);color:var(--muted);font-size:11.5px;margin-top:2px}
+.chip{display:inline-block;font-family:var(--f-mono);font-size:12px;border:1px solid var(--line);border-radius:999px;padding:3px 10px;color:var(--ink)}
+.chip.ev{border-color:rgba(134,183,232,.5);color:var(--blue);background:var(--blue-soft)}
+.chip.empty{color:var(--faint)}
+.status{font-family:var(--f-mono);font-size:11px;border-radius:4px;padding:1px 6px;white-space:nowrap}
+.st-ok{color:var(--ok);border:1px solid rgba(111,200,156,.45)}
+.st-warn{color:var(--warn);border:1px solid rgba(232,181,82,.45)}
+.st-empty{color:var(--faint);border:1px solid var(--line)}
+.split{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px;align-items:start}
+.note{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--panel2);font-size:14px}
+.note.warn{border-color:rgba(232,181,82,.5);background:rgba(232,181,82,.07)}
+.note.bad{border-color:rgba(236,127,111,.5);background:var(--bad-soft)}
+.note b{color:var(--ink)}
+.now{border-color:var(--gold)!important;box-shadow:0 0 0 1px var(--gold),0 6px 24px rgba(227,176,75,.12)}
+
+/* intro */
+.intro{flex:1;display:grid;align-content:center;gap:18px}
+.big{font-size:clamp(40px,7.6vw,88px);font-weight:800;line-height:.95;letter-spacing:-.03em}
+.big em{font-style:normal;color:var(--gold)}
+.lede{font-size:clamp(16px,2vw,21px);color:var(--muted);max-width:40ch}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.stats{display:flex;flex-wrap:wrap;gap:10px}
+.stat{border:1px solid var(--line);border-radius:10px;padding:10px 16px;background:var(--panel2);min-width:150px}
+.stat b{display:block;font-family:var(--f-display);font-size:28px;font-weight:800;line-height:1.1}
+.stat span{font-size:13px;color:var(--muted)}
+.stat.ok b{color:var(--ok)} .stat.bad b{color:var(--bad)}
+
+/* monolith vs micro */
+.vs{display:grid;grid-template-columns:1fr auto 1.4fr;gap:18px;align-items:center;flex:1}
+.mono-box{border:2px solid var(--muted);border-radius:12px;padding:14px;display:grid;gap:6px;background:var(--panel2)}
+.mono-box div{font-family:var(--f-mono);font-size:13px;border-bottom:1px dashed var(--line);padding:4px 2px}
+.mono-box div:last-child{border:0}
+.vs-label{font-family:var(--f-display);font-weight:700;font-size:15px;margin-bottom:8px}
+.vs-mid{font-family:var(--f-display);font-size:22px;color:var(--faint)}
+.micro{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.micro .node{display:grid;gap:6px}
+.cyl{justify-self:center;width:34px;height:20px;border:1px solid var(--blue);border-radius:50%/35%;position:relative}
+.cyl::after{content:"DB";position:absolute;inset:0;display:grid;place-items:center;font-size:9px;color:var(--blue)}
+
+/* architecture */
+.arch{display:grid;gap:10px;flex:1;align-content:center}
+.arow{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center}
+.arr{color:var(--faint);font-family:var(--f-mono);font-size:14px;text-align:center}
+.node.gw{border-color:var(--gold)}
+.svc{display:grid;gap:6px;justify-items:center;min-width:120px}
+.db{font-family:var(--f-mono);font-size:11px;color:var(--blue);border:1px dashed rgba(134,183,232,.55);border-radius:999px;padding:2px 9px}
+.bus{position:relative;height:40px;border-radius:8px;border:1px solid rgba(134,183,232,.6);background:var(--blue-soft);overflow:hidden;display:grid;place-items:center;font-family:var(--f-mono);font-size:13px;color:var(--blue)}
+.bus i{position:absolute;top:calc(50% - 4px);left:-12px;width:8px;height:8px;border-radius:50%;background:var(--blue);animation:run 5s linear infinite}
+.bus i:nth-child(2){animation-delay:-1.6s}.bus i:nth-child(3){animation-delay:-3.3s}
+@keyframes run{to{left:100%}}
+.libbar{border:1px solid rgba(227,176,75,.6);background:var(--gold-soft);border-radius:8px;padding:8px 12px;text-align:center;font-family:var(--f-mono);font-size:13px;color:var(--gold)}
+.libbar small{color:var(--muted);font-family:var(--f-body);margin-left:8px}
+
+/* service cards */
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.card{border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--panel2);display:grid;gap:8px;align-content:start}
+.card h3{font-family:var(--f-mono);font-size:14px;font-weight:600;color:var(--gold);display:flex;justify-content:space-between;gap:8px;align-items:center}
+.card p{font-size:14px}
+.card ul{margin:0;padding-left:18px;color:var(--muted);font-size:12.5px}
+
+/* flow */
+.flow{display:grid;gap:7px}
+.step{display:grid;grid-template-columns:2.2em 11.5em minmax(0,1fr) auto;gap:12px;align-items:center;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);font-size:14px}
+.step .n{font-family:var(--f-mono);color:var(--faint);font-size:12px}
+.step .who{font-family:var(--f-mono);font-size:12.5px;color:var(--gold)}
+.step.saga{grid-template-columns:2.2em minmax(0,1fr);border-style:dashed}
+
+/* patterns */
+.pats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;flex:1;align-content:center}
+.pat{border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--panel2);display:grid;gap:10px;align-content:start}
+.pat h3{font-size:18px;font-weight:700}
+.pat p{font-size:13.5px;color:var(--muted)}
+.mini{display:grid;gap:5px;font-family:var(--f-mono);font-size:11.5px}
+.mini div{border:1px solid var(--line);border-radius:6px;padding:4px 8px;text-align:center}
+.mini .down{border:0;padding:0;color:var(--faint)}
+.mini .hot{border-color:rgba(227,176,75,.6);color:var(--gold)}
+.mini .kf{border-color:rgba(134,183,232,.6);color:var(--blue)}
+
+/* tree + layers */
+.tree{font-family:var(--f-mono);font-size:12.5px;line-height:1.75;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow-x:auto;white-space:pre}
+.tree .d{color:var(--faint)}
+.dot-ok{color:var(--ok)}.dot-warn{color:var(--warn)}.dot-empty{color:var(--faint)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--muted);margin-top:8px}
+.layers{display:grid;gap:4px}
+.layer{display:grid;grid-template-columns:7.5em minmax(0,1fr);gap:10px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:var(--panel2);font-size:13px}
+.layer b{font-family:var(--f-mono);font-size:12.5px;color:var(--gold);font-weight:600}
+.layer code{font-size:11.5px;color:var(--muted);display:block}
+.layer.dbl{border-color:rgba(134,183,232,.55)} .layer.dbl b{color:var(--blue)}
+.ldown{text-align:center;color:var(--faint);font-size:11px;line-height:1}
+.chipset{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+
+/* bars */
+.bignum{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.bignum b{font-family:var(--f-display);font-size:clamp(44px,6vw,68px);font-weight:800;color:var(--bad);line-height:1}
+.bignum span{color:var(--muted);font-size:16px}
+.bars{display:grid;gap:7px}
+.brow{display:grid;grid-template-columns:12em minmax(0,1fr) 7.5em;gap:12px;align-items:center;font-family:var(--f-mono);font-size:12.5px}
+.brow .cnt{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.track{display:flex;height:12px;border-radius:3px;overflow:hidden;background:#232e34}
+.track .ok{background:var(--ok)}.track .warn{background:var(--warn)}
+.blegend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+
+/* code */
+.code{background:var(--code);border:1px solid var(--line);border-radius:10px;font-family:var(--f-mono);font-size:clamp(11.5px,1.12vw,13.2px);line-height:1.62;padding:10px 0;margin:0;overflow-x:auto}
+.ln{display:block;white-space:pre;padding-right:14px;transition:background-color .3s,opacity .3s,box-shadow .3s}
+.ln i{display:inline-block;width:3.2em;padding-right:1em;text-align:right;color:var(--faint);font-style:normal;user-select:none}
+.code.nonum .ln{padding-left:14px}
+.code.focus .ln:not(.hl){opacity:.36}
+.ln.hl{background:var(--gold-soft);box-shadow:inset 3px 0 0 var(--gold)}
+.ln.err{background:var(--bad-soft);box-shadow:inset 3px 0 0 var(--bad)}
+.code .k{color:var(--tk-k)}.code .s{color:var(--tk-s)}.code .a{color:var(--gold)}.code .t{color:var(--blue)}.code .cn{color:var(--tk-n)}.code .n{color:var(--tk-n)}.code .c{color:var(--faint);font-style:italic}
+.filetag{font-family:var(--f-mono);font-size:12px;color:var(--muted);margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.side{display:grid;gap:12px;align-content:start}
+.side h3{font-size:16px;font-weight:700}
+.maptbl{width:100%;border-collapse:collapse;font-size:13px}
+.maptbl td{padding:6px 4px;border-bottom:1px solid var(--line)}
+.maptbl td:first-child{font-family:var(--f-mono);font-size:12px}
+.maptbl td:last-child{text-align:right;font-family:var(--f-mono);color:var(--gold);font-variant-numeric:tabular-nums}
+.jlabel{font-size:12px;color:var(--muted);margin-bottom:4px}
+.topics{display:grid;gap:8px}
+.topic{border:1px solid rgba(134,183,232,.4);border-radius:8px;padding:8px 10px;background:var(--blue-soft)}
+.topic b{font-family:var(--f-mono);font-size:12px;color:var(--blue);font-weight:600;display:block;margin-bottom:4px}
+.topic span{font-family:var(--f-mono);font-size:11px;color:var(--muted);margin-right:8px;display:inline-block}
+.term{background:var(--code);border:1px solid var(--line);border-radius:10px;font-family:var(--f-mono);font-size:13px;line-height:1.7;padding:12px 16px;margin:0;overflow-x:auto;white-space:pre;color:var(--ink)}
+.term .c{color:var(--faint)}.term .del{color:var(--bad)}.term .add{color:var(--ok)}.term .p{color:var(--gold)}
+
+/* frontend mock */
+.browser{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel2)}
+.bbar{display:flex;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);font-family:var(--f-mono);font-size:11.5px;color:var(--muted)}
+.bbar i{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.bbar span{margin-left:8px;border:1px solid var(--line);border-radius:999px;padding:1px 10px}
+.bbody{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.bcol{padding:12px 14px;display:grid;gap:5px;align-content:start;font-size:13px}
+.bcol + .bcol{border-left:1px solid var(--line)}
+.bcol h4{margin:0 0 4px;font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);font-weight:600}
+.bcol code{color:var(--muted);font-size:11.5px;margin-right:6px}
+
+/* roadmap */
+.road{display:grid;gap:8px}
+.rm{display:grid;grid-template-columns:2.4em minmax(0,1fr);gap:14px;align-items:start;border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:var(--panel2)}
+.rm .num{width:2.1em;height:2.1em;border-radius:50%;border:1px solid var(--gold);color:var(--gold);display:grid;place-items:center;font-family:var(--f-mono);font-size:13px}
+.rm h3{font-size:16px;font-weight:700}
+.rm p{font-size:13.5px;color:var(--muted)}
+
+/* chapters + transcript */
+.below{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.6fr);gap:24px;align-items:start}
+.block h2{font-size:20px;font-weight:700;margin-bottom:12px}
+.chap{display:grid;gap:2px;list-style:none;margin:0;padding:0}
+.chap button{width:100%;display:grid;grid-template-columns:2.4em minmax(0,1fr) auto;gap:8px;text-align:left;background:transparent;border:1px solid transparent;border-radius:8px;padding:7px 10px;cursor:pointer;font-size:14px}
+.chap button:hover{background:var(--panel)}
+.chap button.cur{background:var(--panel);border-color:var(--line)}
+.chap .cn{font-family:var(--f-mono);font-size:12px;color:var(--faint);padding-top:2px}
+.chap button.cur .cn{color:var(--gold)}
+.chap .d{font-family:var(--f-mono);font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+.trans{display:grid;gap:18px;max-height:640px;overflow-y:auto;padding-right:6px}
+.trans h3{font-size:14px;font-family:var(--f-mono);color:var(--gold);font-weight:600;margin-bottom:6px}
+.trans button{display:block;width:100%;text-align:left;background:transparent;border:0;border-left:2px solid var(--line);padding:4px 0 4px 12px;cursor:pointer;color:var(--muted);font-size:14.5px;line-height:1.55}
+.trans button:hover{color:var(--ink)}
+.trans button.cur{color:var(--ink);border-left-color:var(--gold)}
+
+/* header nav */
+.topnav{display:grid;gap:6px;justify-items:end}
+.jump{color:var(--gold-ink);background:var(--gold);text-decoration:none;font-weight:600;font-size:14px;padding:7px 14px;border-radius:999px}
+.jump:hover{filter:brightness(1.08)}
+
+/* deep dive */
+.deep{display:grid;gap:22px;scroll-margin-top:16px;border-top:1px solid var(--line);padding-top:32px}
+.deep-head{display:grid;gap:8px;max-width:75ch}
+.deep-head h2{font-size:clamp(26px,3.4vw,36px);font-weight:800}
+.deep-head p{color:var(--muted)}
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-family:var(--f-mono);font-size:12.5px}
+.chain .node{padding:6px 10px;font-size:12.5px}
+.chain .arr{font-size:13px}
+.dd{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start}
+.flist{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 20px;align-items:start;border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--panel)}
+.fgroup{min-width:0;display:grid;gap:2px;align-content:start}
+.fgroup h3{font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:600;margin-bottom:6px}
+.fgroup button{display:flex;justify-content:space-between;gap:8px;align-items:center;width:100%;text-align:left;background:transparent;border:1px solid transparent;border-radius:7px;padding:6px 9px;cursor:pointer;font-family:var(--f-mono);font-size:12.5px;color:var(--muted)}
+.fgroup button:hover{color:var(--ink);background:var(--panel2)}
+.fgroup button.cur{color:var(--ink);background:var(--panel2);border-color:var(--gold)}
+.fgroup button .status{font-size:10px}
+.fview{display:grid;gap:14px;min-width:0}
+.fhead{display:grid;gap:6px}
+.fhead h3{font-family:var(--f-mono);font-size:18px;font-weight:600;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.fhead .path{font-family:var(--f-mono);font-size:12px;color:var(--faint);word-break:break-all}
+.fhead p{color:var(--muted);max-width:75ch}
+.status.st-bad{color:var(--bad);border:1px solid rgba(236,127,111,.5)}
+.status.st-ex{color:var(--blue);border:1px solid rgba(134,183,232,.5)}
+.fbody{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;align-items:start}
+.fbody .code{max-height:680px;overflow:auto}
+.fbody .ln{cursor:pointer}
+.fbody .ln b{display:inline-block;min-width:1.7em;margin-right:6px;font-weight:600;font-size:10.5px;text-align:center;border-radius:4px;color:var(--gold-ink);background:var(--gold);visibility:hidden}
+.fbody .ln.mk b{visibility:visible}
+.fbody .ln.dimx{opacity:.4}
+.notes{display:grid;gap:8px;max-height:680px;overflow:auto;padding-right:4px}
+.notes button{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 12px;cursor:pointer;font-size:14px;line-height:1.55;color:var(--ink)}
+.notes button:hover{border-color:var(--muted)}
+.notes button.cur{border-color:var(--gold);background:var(--panel2)}
+.notes .nb{font-family:var(--f-mono);font-size:11px;font-weight:600;color:var(--gold-ink);background:var(--gold);border-radius:4px;padding:1px 6px;height:fit-content;margin-top:2px}
+.notes .nl{display:block;font-family:var(--f-mono);font-size:11px;color:var(--faint);margin-bottom:2px}
+.notes code{font-family:var(--f-mono);font-size:12.5px;background:var(--code);border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--tk-s)}
+.notes .tip{color:var(--blue);font-weight:600}
+.notes .warnx{color:var(--bad);font-weight:600}
+.code .x-tag{color:var(--blue)}.code .x-attr{color:var(--tk-k)}.code .x-val{color:var(--tk-s)}.code .x-var{color:var(--gold)}.code .x-com{color:var(--faint);font-style:italic}
+.concepts{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.concept{border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--panel);display:grid;gap:8px;align-content:start}
+.concept h3{font-size:16px;font-weight:700}
+.concept p{font-size:13.5px;color:var(--muted)}
+.concept pre{margin:0;background:var(--code);border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-family:var(--f-mono);font-size:11.5px;line-height:1.55;overflow-x:auto;color:var(--ink);white-space:pre}
+
+@media (max-width:980px){
+  .flist{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+  .fbody{grid-template-columns:minmax(0,1fr)}
+  .notes,.fbody .code{max-height:none}
+}
+@media (max-width:860px){
+  .topnav{justify-items:start}
+  .split,.below{grid-template-columns:minmax(0,1fr)}
+  .cards,.pats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .vs{grid-template-columns:minmax(0,1fr)}
+  .vs-mid{text-align:center}
+  .step{grid-template-columns:2.2em minmax(0,1fr)}
+  .step .who{grid-column:2}
+  .step > :nth-child(3),.step > :nth-child(4){grid-column:2}
+  .step > :nth-child(4){justify-self:start}
+}
+@media (max-width:560px){
+  .cards,.pats,.micro{grid-template-columns:minmax(0,1fr)}
+  .brow{grid-template-columns:minmax(0,1fr) auto;row-gap:4px}
+  .brow .track{grid-column:1/-1;grid-row:2}
+  .bbody{grid-template-columns:1fr}.bcol + .bcol{border-left:0;border-top:1px solid var(--line)}
+  .stage{min-height:600px}
+  .where{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition:none!important;animation:none!important}
+}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>banking-platform <span>recap</span></h1>
+      <p>Aapke project ka video-style walkthrough: structure, code, aur aage kya karna hai.</p>
+    </div>
+    <div class="topnav">
+      <p><span class="kbd">Space</span> play/pause · <span class="kbd">←</span> <span class="kbd">→</span> peeche/aage · <span id="totalTime">~</span> ka video</p>
+      <a class="jump" href="#deep">Code deep-dive: har line samjho ↓</a>
+    </div>
+  </header>
+
+  <div class="player" id="player">
+    <div class="stage" id="stage">
+
+      <!-- 1 Intro -->
+      <section class="scene" data-title="Intro: yeh project kya hai">
+        <div class="intro">
+          <p class="eyebrow">Project recap · 31 Oct 2026</p>
+          <h2 class="big">banking<em>-</em>platform</h2>
+          <p class="lede">Ek online bank ka backend, microservices mein. Saath mein ek React frontend.</p>
+          <div class="chips" data-at="1"><span class="chip">Spring Boot 3.3.4</span><span class="chip">Java 21</span><span class="chip">Apache Kafka</span><span class="chip">PostgreSQL</span><span class="chip">Redis</span><span class="chip">React + Vite</span></div>
+          <div class="stats" data-at="2">
+            <div class="stat"><b>7</b><span>Maven modules bane</span></div>
+            <div class="stat ok"><b>7</b><span>files mein code likha</span></div>
+            <div class="stat bad"><b>312</b><span>files abhi khaali</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2 Microservices -->
+      <section class="scene" data-title="Microservices kya hote hain">
+        <div class="sc-head"><p class="eyebrow">Concept</p><h2>Monolith vs Microservices</h2></div>
+        <div class="vs">
+          <div data-at="0">
+            <p class="vs-label">Monolith: sab ek app mein</p>
+            <div class="mono-box"><div>Accounts</div><div>Transfers</div><div>Fraud check</div><div>Notifications</div><div>Audit logs</div><div class="muted">1 server · 1 database</div></div>
+          </div>
+          <div class="vs-mid" data-at="1">→</div>
+          <div data-at="1">
+            <p class="vs-label">Microservices: har kaam alag app</p>
+            <div class="micro">
+              <div class="node">account<span class="cyl"></span></div>
+              <div class="node">transaction<span class="cyl"></span></div>
+              <div class="node">fraud<span class="cyl"></span></div>
+              <div class="node">notification<span class="cyl"></span></div>
+              <div class="node">audit<span class="cyl"></span></div>
+              <div class="node">gateway<small>darwaza</small></div>
+            </div>
+          </div>
+        </div>
+        <div class="note" data-at="2"><b>Aapke project mein:</b> 6 services + 1 <code>common-library</code> (shared code). Har service ka apna <code>pom.xml</code>, root wala <code>pom.xml</code> sabko jodta hai.</div>
+      </section>
+
+      <!-- 3 Architecture -->
+      <section class="scene" data-title="Architecture: badi tasveer">
+        <div class="sc-head"><p class="eyebrow">Architecture</p><h2>Request kahan se kahan jaati hai</h2></div>
+        <div class="arch">
+          <div class="arow" data-at="0">
+            <div class="node">frontend<small>React UI</small></div>
+            <span class="arr">── HTTP + JWT ──▶</span>
+            <div class="node gw">api-gateway<small>login check + routing</small></div>
+          </div>
+          <div class="arr" data-at="1">▼ sahi service tak route</div>
+          <div class="arow" data-at="1">
+            <div class="svc"><div class="node">account</div><span class="db" data-at="2">accounts DB</span></div>
+            <div class="svc"><div class="node">transaction</div><span class="db" data-at="2">transactions DB</span></div>
+            <div class="svc"><div class="node">fraud</div><span class="db" data-at="2">fraud DB</span></div>
+            <div class="svc"><div class="node">notification</div><span class="db" data-at="2">notifications DB</span></div>
+            <div class="svc"><div class="node">audit</div><span class="db" data-at="2">audit DB</span></div>
+          </div>
+          <div class="bus" data-at="3"><i></i><i></i><i></i>Kafka: events ka highway</div>
+          <div class="libbar" data-at="4">common-library<small>errors · response format · events · utils</small></div>
+        </div>
+      </section>
+
+      <!-- 4 Services -->
+      <section class="scene" data-title="Har service ka kaam">
+        <div class="sc-head"><p class="eyebrow">Services</p><h2>Kaun kya karega</h2></div>
+        <div class="cards">
+          <div class="card" data-at="0"><h3>api-gateway <span class="status st-empty">khaali</span></h3><p>Sabse aage. JWT check, request routing, logging.</p><ul><li>Spring Cloud Gateway</li><li>JwtAuthenticationFilter</li></ul></div>
+          <div class="card" data-at="0"><h3>account-service <span class="status st-empty">khaali</span></h3><p>Account kholna, balance, freeze ya close.</p><ul><li>Account, AccountBalance entity</li><li>Outbox + Kafka consumer</li></ul></div>
+          <div class="card" data-at="1"><h3>transaction-service <span class="status st-empty">khaali</span></h3><p>Deposit aur transfer. Saga se flow manage.</p><ul><li>TransactionSagaOrchestrator</li><li>SagaState, Outbox</li></ul></div>
+          <div class="card" data-at="1"><h3>fraud-service <span class="status st-empty">khaali</span></h3><p>Har transaction ko rules se check karna.</p><ul><li>Amount, Velocity, Geographic, Pattern rules</li><li>RiskScoreCalculator</li></ul></div>
+          <div class="card" data-at="2"><h3>notification-service <span class="status st-empty">khaali</span></h3><p>Email, SMS, push bhejna.</p><ul><li>Email/Sms/Push services</li><li>Templates</li></ul></div>
+          <div class="card" data-at="2"><h3>audit-service <span class="status st-empty">khaali</span></h3><p>Har event ka record, jaanch ke liye.</p><ul><li>AuditLog entity</li><li>3 Kafka consumers</li></ul></div>
+        </div>
+      </section>
+
+      <!-- 5 Transfer flow -->
+      <section class="scene" data-title="Ek transfer ka safar">
+        <div class="sc-head"><p class="eyebrow">Flow · Rahul → Priya · ₹5,000</p><h2>Ek transfer ka safar</h2></div>
+        <div class="flow">
+          <div class="step" data-at="0"><span class="n">1</span><span class="who">gateway → transaction</span><span>Rahul transfer request bhejta hai</span><span class="chip">POST /transfer</span></div>
+          <div class="step" data-at="1"><span class="n">2</span><span class="who">transaction-service</span><span>PENDING save, event Kafka par</span><span class="chip ev">TRANSACTION_INITIATED</span></div>
+          <div class="step" data-at="2"><span class="n">3</span><span class="who">fraud-service</span><span>Rules chalaata hai: approve ya block</span><span class="chip ev">FRAUD_CLEARED</span></div>
+          <div class="step" data-at="3"><span class="n">4</span><span class="who">account-service</span><span>Rahul −₹5,000 · Priya +₹5,000</span><span class="chip">balance update</span></div>
+          <div class="step" data-at="4"><span class="n">5</span><span class="who">transaction-service</span><span>Status COMPLETED</span><span class="chip ev">TRANSACTION_COMPLETED</span></div>
+          <div class="step" data-at="5"><span class="n">6</span><span class="who">notification + audit</span><span>SMS bhejo, record likho</span><span class="chip">SMS · AuditLog</span></div>
+          <div class="step saga" data-at="6"><span class="n">↺</span><span><b>Saga pattern:</b> beech mein koi step fail ho (jaise fraud block), toh pichhle steps undo hote hain aur event <span class="chip ev">TRANSACTION_FAILED</span> jaata hai.</span></div>
+        </div>
+      </section>
+
+      <!-- 6 Patterns -->
+      <section class="scene" data-title="Teen zaroori concepts">
+        <div class="sc-head"><p class="eyebrow">Concepts</p><h2>Outbox, JWT aur Flyway</h2></div>
+        <div class="pats">
+          <div class="pat" data-at="0"><h3>Outbox pattern</h3>
+            <div class="mini"><div>AccountServiceImpl</div><div class="down">▼ ek hi DB transaction</div><div class="hot">accounts + outbox_events table</div><div class="down">▼ OutboxEventRelay (har kuch second)</div><div class="kf">Kafka</div></div>
+            <p>Event pehle DB mein, phir Kafka par. DB aur Kafka kabhi out-of-sync nahi honge.</p></div>
+          <div class="pat" data-at="1"><h3>JWT login</h3>
+            <div class="mini"><div>Login</div><div class="down">▼ signed token milta hai</div><div class="hot">Authorization: Bearer eyJ…</div><div class="down">▼ har request ke saath</div><div>Gateway verify karta hai</div></div>
+            <p>Token ke andar user ki details hoti hain, signature se pata chalta hai ki asli hai.</p></div>
+          <div class="pat" data-at="2"><h3>Flyway migrations</h3>
+            <div class="mini"><div class="hot">V1__create_accounts_schema.sql</div><div class="down">▼ app start par</div><div>Tables ban jaati hain</div><div class="down">▼ baad mein</div><div>V2__add_column.sql</div></div>
+            <p>Database ka version control. Har service ki apni migration file hai (abhi khaali).</p></div>
+        </div>
+      </section>
+
+      <!-- 7 Structure -->
+      <section class="scene" data-title="Folder structure">
+        <div class="sc-head"><p class="eyebrow">Structure</p><h2>Repo ka naksha</h2></div>
+        <div class="split">
+          <div data-at="0">
+<div class="tree">banking-platform/
+<span class="d">├─</span> pom.xml                 <span class="dot-ok">● parent, 7 modules</span>
+<span class="d">├─</span> common-library/         <span class="dot-warn">◐ adhoora</span>
+<span class="d">├─</span> api-gateway/            <span class="dot-empty">○</span>
+<span class="d">├─</span> account-service/        <span class="dot-empty">○</span>
+<span class="d">│  └─</span> src/main/java/com/banking/account/
+<span class="d">│     ├─</span> controller/ service/ repository/
+<span class="d">│     ├─</span> entity/ dto/ mapper/ config/ ...
+<span class="d">│     └─</span> resources/application.yml, db/migration/
+<span class="d">├─</span> transaction-service/    <span class="dot-empty">○</span>
+<span class="d">├─</span> fraud-service/          <span class="dot-empty">○</span>
+<span class="d">├─</span> notification-service/   <span class="dot-empty">○</span>
+<span class="d">├─</span> audit-service/          <span class="dot-empty">○</span>
+<span class="d">├─</span> frontend/               <span class="dot-ok">● mock UI</span>
+<span class="d">├─</span> docker/  docs/  infrastructure/  <span class="dot-empty">○</span>
+<span class="d">└─</span> README.md               <span class="dot-empty">○</span></div>
+            <div class="legend"><span><span class="dot-ok">●</span> code likha</span><span><span class="dot-warn">◐</span> adhoora</span><span><span class="dot-empty">○</span> sirf khaali files</span></div>
+          </div>
+          <div>
+            <div class="layers" data-at="1">
+              <div class="layer"><b>Controller</b><span>HTTP request leta hai<code>AccountController.java</code></span></div>
+              <div class="ldown">▼</div>
+              <div class="layer"><b>Service</b><span>Business logic, rules<code>AccountServiceImpl.java</code></span></div>
+              <div class="ldown">▼</div>
+              <div class="layer"><b>Repository</b><span>DB se baat (Spring Data JPA)<code>AccountRepository.java</code></span></div>
+              <div class="ldown">▼</div>
+              <div class="layer"><b>Entity</b><span>Java class = DB table<code>Account.java</code></span></div>
+              <div class="ldown">▼</div>
+              <div class="layer dbl"><b>PostgreSQL</b><span>Asli data</span></div>
+            </div>
+            <div class="chipset" data-at="2"><span class="chip">dto/ request-response</span><span class="chip">mapper/ MapStruct</span><span class="chip">config/ Kafka, Security</span><span class="chip">security/ JWT</span><span class="chip ev">producer/ consumer/</span></div>
+          </div>
+        </div>
+        <div class="note warn" data-at="3"><b>docker/</b> (30 files) aur <b>docs/</b> (39 files) mein Kafka, Postgres, Grafana setup aur design notes ke naam hain, lekin sab files khaali hain.</div>
+      </section>
+
+      <!-- 8 Progress -->
+      <section class="scene" data-title="Kitna kaam hua hai">
+        <div class="sc-head"><p class="eyebrow">Progress</p><h2>Kitna kaam hua hai</h2></div>
+        <div class="bignum" data-at="0"><b>312</b><span>files bilkul khaali (0 lines)</span></div>
+        <div class="bars" data-at="1">
+          <div class="brow"><span>common-library</span><div class="track"><span class="ok" style="width:50%"></span><span class="warn" style="width:8.3%"></span></div><span class="cnt">6 + 1 / 12</span></div>
+          <div class="brow"><span>frontend (mock)</span><div class="track"><span class="ok" style="width:100%"></span></div><span class="cnt">21 / 21</span></div>
+          <div class="brow"><span>account-service</span><div class="track"></div><span class="cnt">0 / 43</span></div>
+          <div class="brow"><span>transaction-service</span><div class="track"></div><span class="cnt">0 / 49</span></div>
+          <div class="brow"><span>fraud-service</span><div class="track"></div><span class="cnt">0 / 34</span></div>
+          <div class="brow"><span>notification-service</span><div class="track"></div><span class="cnt">0 / 30</span></div>
+          <div class="brow"><span>audit-service</span><div class="track"></div><span class="cnt">0 / 23</span></div>
+          <div class="brow"><span>api-gateway</span><div class="track"></div><span class="cnt">0 / 12</span></div>
+          <div class="blegend"><span><span class="sw" style="background:var(--ok)"></span>poora</span><span><span class="sw" style="background:var(--warn)"></span>adhoora</span><span><span class="sw" style="background:#232e34"></span>khaali</span><span>Java files gine hain; pom.xml sab mein ready hai</span></div>
+        </div>
+        <div class="note" data-at="2">Aapne pehle poora naksha (files ke naam) bana liya tha, phir <b>common-library</b> se bharna shuru kiya. Yeh sahi order hai. Ab bas bharna baaki hai.</div>
+      </section>
+
+      <!-- 9 ErrorCode -->
+      <section class="scene" data-title="Code: ErrorCode.java">
+        <div class="sc-head"><p class="eyebrow">Code 1/4 · common-library</p><h2>ErrorCode: saare errors ki list</h2></div>
+        <div class="split">
+          <div>
+            <div class="filetag">exception/ErrorCode.java <span class="status st-ok">done</span> <span>(video ke liye chhota kiya)</span></div>
+<pre class="code" data-main>package com.banking.common.exception;
+
+@Getter
+public enum ErrorCode {
+
+    // Generic
+    INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR),
+    VALIDATION_ERROR(HttpStatus.BAD_REQUEST),
+    RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND),
+
+    // Account
+    ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND),
+    ACCOUNT_FROZEN(HttpStatus.CONFLICT),
+    INSUFFICIENT_FUNDS(HttpStatus.CONFLICT),
+    // ... Transaction, Fraud, Notification, Gateway
+
+    private final HttpStatus status;
+
+    ErrorCode(HttpStatus status) {
+        this.status = status;
+    }
+}</pre>
+          </div>
+          <div class="side" data-at="1">
+            <h3>Error → HTTP status</h3>
+            <table class="maptbl">
+              <tr><td>ACCOUNT_NOT_FOUND</td><td>404</td></tr>
+              <tr><td>VALIDATION_ERROR</td><td>400</td></tr>
+              <tr><td>INSUFFICIENT_FUNDS</td><td>409</td></tr>
+              <tr><td>FRAUD_BLOCKED</td><td>403</td></tr>
+              <tr><td>TRANSACTION_FAILED</td><td>422</td></tr>
+              <tr><td>SERVICE_UNAVAILABLE</td><td>503</td></tr>
+            </table>
+            <p class="muted" style="font-size:13px">Total 18 error codes, 6 groups mein.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 10 BankingException -->
+      <section class="scene" data-title="Code: BankingException.java">
+        <div class="sc-head"><p class="eyebrow">Code 2/4 · common-library</p><h2>BankingException: apna exception</h2></div>
+        <div class="split">
+          <div>
+            <div class="filetag">exception/BankingException.java <span class="status st-ok">done</span></div>
+<pre class="code" data-main>@Getter
+public class BankingException extends RuntimeException {
+
+    private final ErrorCode errorCode;
+
+    public BankingException(ErrorCode errorCode, String message) {
+        super(message);
+        this.errorCode = errorCode;
+    }
+
+    public BankingException(ErrorCode errorCode, String message, Throwable cause) {
+        super(message, cause);
+        this.errorCode = errorCode;
+    }
+
+    public BankingException(String message) {
+        this(ErrorCode.INTERNAL_ERROR, message);
+    }
+
+    public HttpStatus getStatus() {
+        return errorCode.getStatus();
+    }
+}</pre>
+          </div>
+          <div class="side">
+            <div class="note" data-at="0"><b>RuntimeException kyun?</b> Unchecked exception hai, toh har method par <code>throws</code> ya try-catch likhna zaroori nahi.</div>
+            <div data-at="3">
+              <p class="jlabel">Service mein aise use hoga (aage likhna hai):</p>
+<pre class="code nonum">throw new BankingException(
+    ErrorCode.ACCOUNT_NOT_FOUND,
+    "Account ACC-1001 nahi mila");</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 11 Responses -->
+      <section class="scene" data-title="Code: API response DTOs">
+        <div class="sc-head"><p class="eyebrow">Code 3/4 · common-library</p><h2>ApiResponse, ErrorResponse, PagedResponse</h2></div>
+        <div class="split">
+          <div>
+            <div class="filetag">dto/*.java <span class="status st-ok">done</span> <span>(teen files, chhota kiya)</span></div>
+<pre class="code" data-main>@JsonInclude(JsonInclude.Include.NON_NULL)
+public class ApiResponse&lt;T&gt; {
+    private final T data;
+    private final ErrorResponse error;
+
+    public ApiResponse(T data) { this.data = data; this.error = null; }
+    public ApiResponse(ErrorResponse error) { this.data = null; this.error = error; }
+}
+
+public class ErrorResponse {
+    private final String message;
+    private final String code;
+    private final int status;
+
+    public ErrorResponse(ErrorCode errorCode, String message) {
+        this.code = errorCode.name();
+        this.message = message;
+        this.status = errorCode.getStatus().value();
+    }
+}
+
+@Builder
+public class PagedResponse&lt;T&gt; {
+    List&lt;T&gt; data; int page; int size;
+    long totalElements; int totalPages; boolean last;
+}</pre>
+          </div>
+          <div class="side">
+            <div data-at="0"><p class="jlabel">Success par client ko milega:</p>
+<pre class="code nonum">{
+  "data": {
+    "accountNumber": "ACC-1001",
+    "balance": 25000.00
+  }
+}</pre></div>
+            <div data-at="2"><p class="jlabel">Error par:</p>
+<pre class="code nonum">{
+  "error": {
+    "message": "Account ACC-1001 nahi mila",
+    "code": "ACCOUNT_NOT_FOUND",
+    "status": 404
+  }
+}</pre></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 12 Events -->
+      <section class="scene" data-title="Code: BaseEvent + EventType">
+        <div class="sc-head"><p class="eyebrow">Code 4/4 · common-library</p><h2>Kafka events ki neev</h2></div>
+        <div class="split">
+          <div>
+            <div class="filetag">event/EventType.java + BaseEvent.java <span class="status st-warn">commit baaki</span></div>
+<pre class="code" data-main>public enum EventType {
+    ACCOUNT_CREATED(Topics.ACCOUNT),
+    ACCOUNT_STATUS_CHANGED(Topics.ACCOUNT),
+    TRANSACTION_INITIATED(Topics.TRANSACTION),
+    TRANSACTION_COMPLETED(Topics.TRANSACTION),
+    TRANSACTION_FAILED(Topics.TRANSACTION),
+    FRAUD_DETECTED(Topics.FRAUD),
+    FRAUD_CLEARED(Topics.FRAUD),
+    NOTIFICATION_REQUESTED(Topics.NOTIFICATION);
+
+    public static class Topics {
+        public static final String ACCOUNT = "banking.account.events";
+        public static final String TRANSACTION = "banking.transaction.events";
+        // ... FRAUD, NOTIFICATION
+    }
+}
+
+public abstract class BaseEvent {
+    private String eventId;        // UUID, har event ka unique id
+    private EventType eventType;
+    private String aggregateId;    // jaise accountId
+    private Instant occurredAt;
+    private String correlationId;  // ek flow ke saare events jodta hai
+    private int schemaVersion;     // abhi 1
+}</pre>
+          </div>
+          <div class="side">
+            <div class="topics" data-at="1">
+              <div class="topic"><b>banking.account.events</b><span>ACCOUNT_CREATED</span><span>ACCOUNT_STATUS_CHANGED</span></div>
+              <div class="topic"><b>banking.transaction.events</b><span>INITIATED</span><span>COMPLETED</span><span>FAILED</span></div>
+              <div class="topic"><b>banking.fraud.events</b><span>FRAUD_DETECTED</span><span>FRAUD_CLEARED</span></div>
+              <div class="topic"><b>banking.notification.events</b><span>NOTIFICATION_REQUESTED</span></div>
+            </div>
+            <div class="note warn" data-at="4"><b>Git status:</b> BaseEvent, EventType aur DateTimeUtil mein changes abhi commit nahi hue hain.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 13 Bug -->
+      <section class="scene" data-title="Bug: DateTimeUtil typo">
+        <div class="sc-head"><p class="eyebrow">Bug mila</p><h2>Ek typo jo build tod dega</h2></div>
+        <div class="split">
+          <div>
+            <div class="filetag">util/DateTimeUtil.java <span class="status st-warn">adhoora</span></div>
+<pre class="code" data-main data-err="5">package com.banking.common.util;
+
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.Duaration;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+
+public final class DateTimeUtil {
+
+    // khaali: helper methods likhne hain
+}</pre>
+          </div>
+          <div class="side">
+            <div class="note bad" data-at="0"><b>Compiler kya bolega:</b>
+<pre class="term" style="margin-top:8px;border:0;padding:4px 0;background:transparent"><span class="del">error: cannot find symbol</span>
+  symbol:   class Duaration
+  location: package java.time</pre></div>
+            <div data-at="1"><p class="jlabel">Fix:</p>
+<pre class="term"><span class="del">- import java.time.Duaration;</span>
+<span class="add">+ import java.time.Duration;</span></pre></div>
+            <div data-at="2"><p class="jlabel">common-library mein abhi khaali:</p>
+              <div class="chipset" style="margin-top:0"><span class="chip empty">MoneyUtil</span><span class="chip empty">MaskingUtil</span><span class="chip empty">CurrencyValidator</span><span class="chip empty">IbanValidator</span></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 14 Frontend -->
+      <section class="scene" data-title="Frontend: Meridian UI">
+        <div class="sc-head"><p class="eyebrow">Frontend</p><h2>Meridian: React UI (mock data)</h2></div>
+        <div class="split">
+          <div class="browser" data-at="0">
+            <div class="bbar"><i></i><i></i><i></i><span>localhost:5173</span></div>
+            <div class="bbody">
+              <div class="bcol"><h4>Customer</h4><div><code>/</code>Overview</div><div><code>/accounts</code>Accounts</div><div><code>/transfer</code>Transfer</div><div><code>/transactions</code>History</div><div><code>/notifications</code>Alerts</div></div>
+              <div class="bcol"><h4>Admin</h4><div>Dashboard</div><div>Accounts</div><div>Transactions</div><div>Fraud alerts</div><div>Audit log</div><div>Service health</div></div>
+            </div>
+          </div>
+          <div class="side">
+            <div data-at="1"><p class="jlabel">Chalane ke liye:</p>
+<pre class="term"><span class="p">$</span> cd frontend
+<span class="p">$</span> npm install
+<span class="p">$</span> npm run dev</pre></div>
+            <div class="note" data-at="2"><b>Baad mein:</b> <code>src/data/mockData.js</code> ki jagah asli API calls, gateway ke through.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 15 Roadmap -->
+      <section class="scene" data-title="Roadmap: aage kya karna hai">
+        <div class="sc-head"><p class="eyebrow">Roadmap</p><h2>Ek-ek service, end-to-end</h2></div>
+        <div class="road">
+          <div class="rm" data-at="1"><span class="num">1</span><div><h3>common-library khatam karo</h3><p>Typo fix, MoneyUtil/MaskingUtil likho, <code>mvn clean install</code> se build check.</p></div></div>
+          <div class="rm" data-at="2"><span class="num">2</span><div><h3>account-service (Kafka ke bina)</h3><p>Entity → Repository → Service → Controller → application.yml → Postgres. Postman se test.</p></div></div>
+          <div class="rm" data-at="3"><span class="num">3</span><div><h3>transaction-service</h3><p>Deposit aur transfer, pehle simple REST se.</p></div></div>
+          <div class="rm" data-at="4"><span class="num">4</span><div><h3>Kafka jodo</h3><p>Events bhejna (producer) aur sunna (consumer).</p></div></div>
+          <div class="rm" data-at="5"><span class="num">5</span><div><h3>Baaki services + advanced</h3><p>fraud, notification, audit, gateway. Last mein Outbox aur Saga.</p></div></div>
+        </div>
+      </section>
+
+      <!-- 16 Next -->
+      <section class="scene" data-title="Aaj ka pehla kaam">
+        <div class="sc-head"><p class="eyebrow">Next step</p><h2>Aaj ka pehla kaam</h2></div>
+        <div class="split">
+<pre class="term" data-at="0"><span class="c"># 1. DateTimeUtil.java mein typo fix</span>
+<span class="del">- import java.time.Duaration;</span>
+<span class="add">+ import java.time.Duration;</span>
+
+<span class="c"># 2. Root folder se common-library build</span>
+<span class="p">$</span> mvn -pl common-library clean install
+
+<span class="c"># 3. Kaam pakka ho toh commit</span>
+<span class="p">$</span> git add common-library
+<span class="p">$</span> git commit -m "feat(common): events + utils"</pre>
+          <div class="side">
+            <div class="note warn" data-at="1"><b>Dhyaan do:</b> service poms mein Eureka client hai, lekin Eureka server ka koi module nahi. Baad mein hatana hoga ya server banana hoga.</div>
+            <div class="note" data-at="2"><b>Ready ho?</b> Claude ko bolo "Step 1 shuru karo". Saath mein ek-ek file likhenge aur har line samjhenge.</div>
+          </div>
+        </div>
+      </section>
+
+      <button class="overlay" id="overlay" type="button" aria-label="Video chalao"><span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>Video chalao</span></button>
+    </div>
+
+    <div class="cap"><span class="cap-tag">CC</span><p class="cap-text" id="cap" aria-live="polite"></p></div>
+    <div class="prog" id="prog"></div>
+    <div class="ctrl">
+      <button class="ib" id="bPrevS" type="button" aria-label="Pichhla chapter"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+      <button class="ib" id="bPrev" type="button" aria-label="Pichhli line"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button class="ib main" id="bPlay" type="button" aria-label="Play"></button>
+      <button class="ib" id="bNext" type="button" aria-label="Agli line"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+      <button class="ib" id="bNextS" type="button" aria-label="Agla chapter"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+      <span class="time" id="time">0:00 / 0:00</span>
+      <span class="where" id="where"></span>
+      <button class="pill" id="bSpeed" type="button" aria-label="Speed">1x</button>
+      <button class="pill" id="bVoice" type="button" aria-pressed="false">Awaaz</button>
+      <button class="ib" id="bFull" type="button" aria-label="Full screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+      <div class="vrow" id="vrow" hidden>
+        <label for="vsel">Voice:</label>
+        <select id="vsel"></select>
+        <span id="vstat" aria-live="polite"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="below">
+    <div class="block"><h2>Chapters</h2><ol class="chap" id="chap"></ol></div>
+    <div class="block"><h2>Poora transcript</h2><div class="trans" id="trans"></div></div>
+  </div>
+
+  <section class="deep" id="deep">
+    <div class="deep-head">
+      <p class="eyebrow">Code deep-dive</p>
+      <h2>Har file, har line</h2>
+      <p>Left se file chuno. Code ki kisi line par ya right side ke kisi note par click karo, toh woh hissa highlight ho jaayega. Upar wali files aapne likhi hain (asli code, bina badlaav ke). Neeche "Aage aise likhoge" wali files example hain, jo dikhati hain ki account-service ka code kaisa banega.</p>
+    </div>
+
+    <div>
+      <p class="jlabel">Yeh sab files aapas mein aise judti hain (ek error ka safar):</p>
+      <div class="chain">
+        <div class="node">AccountController</div><span class="arr">→</span>
+        <div class="node">AccountServiceImpl</div><span class="arr">throw →</span>
+        <div class="node gw">BankingException(ErrorCode)</div><span class="arr">→</span>
+        <div class="node">GlobalExceptionHandler</div><span class="arr">→</span>
+        <div class="node gw">ErrorResponse</div><span class="arr">in</span>
+        <div class="node gw">ApiResponse</div><span class="arr">→</span>
+        <div class="node">JSON + HTTP 404</div>
+      </div>
+    </div>
+
+    <div class="dd">
+      <nav class="flist" id="flist" aria-label="Files"></nav>
+      <div class="fview">
+        <div class="fhead"><h3 id="fname"></h3><span class="path" id="fpath"></span><p id="fsum"></p></div>
+        <div class="fbody">
+          <pre class="code" id="fcode"></pre>
+          <div class="notes" id="fnotes"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="deep-head" style="margin-top:12px">
+      <p class="eyebrow">Java + Spring basics</p>
+      <h2>Concepts jo is code mein baar-baar aayenge</h2>
+    </div>
+    <div class="concepts">
+      <div class="concept"><h3>Maven: parent, modules, scope</h3><p>Root <code>pom.xml</code> parent hai aur modules ki list rakhta hai. <code>dependencyManagement</code> sirf version tay karta hai. <code>scope</code> batata hai ki library kab chahiye: <code>test</code> sirf tests mein, <code>runtime</code> sirf chalte waqt.</p><pre>mvn clean install          # sab build
+mvn -pl account-service spring-boot:run</pre></div>
+      <div class="concept"><h3>enum</h3><p>Fixed constants ki list. Har constant ek object hai, jiske apne fields aur constructor ho sakte hain. Aapke ErrorCode aur EventType dono enums hain.</p><pre>ErrorCode c = ErrorCode.ACCOUNT_NOT_FOUND;
+c.name();       // "ACCOUNT_NOT_FOUND"
+c.getStatus();  // HttpStatus.NOT_FOUND</pre></div>
+      <div class="concept"><h3>Generics &lt;T&gt;</h3><p>T ek placeholder type hai. Ek hi class har type ke data ke saath kaam karti hai, aur compiler type check bhi karta hai.</p><pre>ApiResponse&lt;AccountResponse&gt; a;
+PagedResponse&lt;TransactionResponse&gt; p;</pre></div>
+      <div class="concept"><h3>final, static, abstract</h3><p><code>final</code> field ek baar set hoti hai. <code>static</code> cheez class ki hoti hai, object ki nahi. <code>abstract</code> class ka seedha object nahi banta, sirf extend hoti hai.</p><pre>BaseEvent e = new BaseEvent();  // error: abstract
+EventType.Topics.ACCOUNT         // static, no object</pre></div>
+      <div class="concept"><h3>Lombok</h3><p>Boilerplate code compile ke time par khud likh deta hai. Source mein dikhta nahi, lekin .class file mein hota hai.</p><pre>@Getter               → getX()
+@Setter               → setX(..)
+@NoArgsConstructor    → new X()
+@RequiredArgsConstructor → final fields ka constructor
+@Builder              → X.builder().a(1).build()</pre></div>
+      <div class="concept"><h3>Jackson (JSON)</h3><p>Spring Java objects ko JSON mein (aur wapas) Jackson se badalta hai. Getters se JSON fields bante hain.</p><pre>@JsonInclude(NON_NULL) → null field skip
+@JsonIgnore            → field/getter skip</pre></div>
+      <div class="concept"><h3>Checked vs unchecked exception</h3><p><code>Exception</code> (checked) ko pakadna ya <code>throws</code> likhna zaroori hai. <code>RuntimeException</code> (unchecked) mein nahi. Spring <code>@Transactional</code> default rollback sirf unchecked par karta hai.</p><pre>class BankingException
+    extends RuntimeException  // unchecked</pre></div>
+      <div class="concept"><h3>Spring ke main annotations</h3><p>Spring in annotations wali classes ke objects (beans) khud banata hai aur constructor ke through ek doosre mein daal deta hai. Isko dependency injection kehte hain.</p><pre>@RestController  HTTP endpoints
+@Service         business logic
+@Repository      DB (JpaRepository)
+@Transactional   sab ya kuch nahi</pre></div>
+    </div>
+  </section>
+</div>
+
+<script type="text/plain" id="src-error-code">package com.banking.common.exception;
+
+import lombok.Getter;
+import org.springframework.http.HttpStatus;
+
+@Getter
+public enum ErrorCode {
+
+    // Generic
+    INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR),
+    VALIDATION_ERROR(HttpStatus.BAD_REQUEST),
+    RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND),
+    UNAUTHORIZED(HttpStatus.UNAUTHORIZED),
+    FORBIDDEN(HttpStatus.FORBIDDEN),
+
+    // Account
+    ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND),
+    ACCOUNT_FROZEN(HttpStatus.CONFLICT),
+    ACCOUNT_CLOSED(HttpStatus.CONFLICT),
+    DUPLICATE_ACCOUNT(HttpStatus.CONFLICT),
+    INSUFFICIENT_FUNDS(HttpStatus.CONFLICT),
+
+    // Transaction
+    TRANSACTION_NOT_FOUND(HttpStatus.NOT_FOUND),
+    TRANSACTION_FAILED(HttpStatus.UNPROCESSABLE_ENTITY),
+    DUPLICATE_TRANSACTION(HttpStatus.CONFLICT),
+    LIMIT_EXCEEDED(HttpStatus.CONFLICT),
+
+    // Fraud
+    FRAUD_ALERT_NOT_FOUND(HttpStatus.NOT_FOUND),
+    FRAUD_BLOCKED(HttpStatus.FORBIDDEN),
+
+    // Notification
+    NOTIFICATION_DELIVERY_FAILED(HttpStatus.BAD_GATEWAY),
+
+    // Gateway
+    SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE);
+
+    private final HttpStatus status;
+
+    ErrorCode(HttpStatus status) {
+        this.status = status;
+    }
+}
+</script>
+<script type="text/plain" id="src-banking-exception">package com.banking.common.exception;
+
+import lombok.Getter;
+import org.springframework.http.HttpStatus;
+
+@Getter
+public class BankingException extends RuntimeException {
+
+    private final ErrorCode errorCode;
+
+    public BankingException(ErrorCode errorCode, String message) {
+        super(message);
+        this.errorCode = errorCode;
+    }
+
+    public BankingException(ErrorCode errorCode, String message, Throwable cause) {
+        super(message, cause);
+        this.errorCode = errorCode;
+    }
+
+    public BankingException(String message) {
+        this(ErrorCode.INTERNAL_ERROR, message);
+    }
+
+    public HttpStatus getStatus() {
+        return errorCode.getStatus();
+    }
+}
+</script>
+<script type="text/plain" id="src-api-response">package com.banking.common.dto;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.Getter;
+
+@Getter
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class ApiResponse<T> {
+
+    private final T data;
+
+    private final ErrorResponse error;
+
+    public ApiResponse(T data) {
+        this.data = data;
+        this.error = null;
+    }
+
+    public ApiResponse(ErrorResponse error) {
+        this.data = null;
+        this.error = error;
+    }
+}
+</script>
+<script type="text/plain" id="src-error-response">package com.banking.common.dto;
+
+import com.banking.common.exception.ErrorCode;
+import lombok.Getter;
+
+public class ErrorResponse {
+
+    @Getter
+    private final String message;
+
+    @Getter
+    private final String code; 
+
+    @Getter
+    private final int status;
+
+    public ErrorResponse(ErrorCode errorCode, String message) {
+        this.code = errorCode.name();
+        this.message = message;
+        this.status = errorCode.getStatus().value();
+    }
+    
+}
+</script>
+<script type="text/plain" id="src-paged-response">package com.banking.common.dto;
+
+import lombok.Getter;
+import lombok.Builder;
+import java.util.List;
+
+@Getter
+@Builder
+public class PagedResponse<T> {
+
+    private final List<T> data;
+
+    private final int page;
+
+    private final int size;
+
+    private final long totalElements;
+
+    private final int totalPages;
+
+    private final boolean last;
+}</script>
+<script type="text/plain" id="src-event-type">package com.banking.common.event;
+
+import lombok.Getter;
+
+@Getter
+public enum EventType{
+    //Account 
+    ACCOUNT_CREATED(Topics.ACCOUNT),
+    ACCOUNT_STATUS_CHANGED(Topics.ACCOUNT),
+
+    //Transaction
+    TRANSACTION_INITIATED(Topics.TRANSACTION),
+    TRANSACTION_COMPLETED(Topics.TRANSACTION),
+    TRANSACTION_FAILED(Topics.TRANSACTION),
+
+    //fraud
+    FRAUD_DETECTED(Topics.FRAUD),
+    FRAUD_CLEARED(Topics.FRAUD),
+
+    // Notification
+    NOTIFICATION_REQUESTED(Topics.NOTIFICATION);
+
+    private final String topic;
+
+    EventType(String topic) {
+        this.topic = topic;
+    }
+
+    public static class Topics {
+        public static final String ACCOUNT = "banking.account.events";
+        public static final String TRANSACTION = "banking.transaction.events";
+        public static final String FRAUD = "banking.fraud.events";
+        public static final String NOTIFICATION = "banking.notification.events";
+
+        private Topics() {
+            // Private constructor to prevent instantiation
+        }
+    }
+
+}</script>
+<script type="text/plain" id="src-base-event">package com.banking.common.event;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.time.Instant;
+import java.util.UUID;
+
+@Getter
+@Setter
+@NoArgsConstructor
+public abstract class BaseEvent {
+
+    public static final int CURRENT_SCHEMA_VERSION = 1;
+
+    private String eventId;
+
+    private EventType eventType;
+
+    private String aggregateId;
+
+    private Instant occurredAt;
+
+    private String correlationId;
+
+    private int schemaVersion;
+
+    protected BaseEvent(EventType eventType, String aggregateId, String correlationId) {
+        this.eventId = UUID.randomUUID().toString();
+        this.eventType = eventType;
+        this.aggregateId = aggregateId;
+        this.correlationId = correlationId;
+        this.occurredAt = Instant.now();
+        this.schemaVersion = CURRENT_SCHEMA_VERSION;
+    }
+
+    @JsonIgnore
+    public String getTopic() {
+        return eventType.getTopic();
+    }
+}
+</script>
+<script type="text/plain" id="src-datetime-util">package com.banking.common.util;
+
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.Duaration;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+
+public final class DateTimeUtil {
+
+    
+}</script>
+<script type="text/plain" id="src-root-pom"><?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.3.4</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.banking</groupId>
+    <artifactId>banking-platform</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>banking-platform</name>
+    <description>Production-grade banking platform</description>
+
+    <modules>
+        <module>common-library</module>
+        <module>account-service</module>
+        <module>transaction-service</module>
+        <module>fraud-service</module>
+        <module>audit-service</module>
+        <module>notification-service</module>
+        <module>api-gateway</module>
+    </modules>
+
+    <properties>
+        <java.version>21</java.version>
+        <spring-cloud.version>2023.0.3</spring-cloud.version>
+        <mapstruct.version>1.5.5.Final</mapstruct.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.banking</groupId>
+                <artifactId>common-library</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
+</script>
+<script type="text/plain" id="src-common-pom"><?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.banking</groupId>
+        <artifactId>banking-platform</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>common-library</artifactId>
+    <packaging>jar</packaging>
+    <name>common-library</name>
+    <description>Shared DTOs, exceptions, and utilities for the banking platform</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.6</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
+</script>
+<script type="text/plain" id="src-ex-entity">package com.banking.account.entity;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
+
+@Entity
+@Table(name = "accounts")
+@Getter
+@Setter
+@NoArgsConstructor
+public class Account {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(name = "account_number", nullable = false, unique = true)
+    private String accountNumber;
+
+    @Column(name = "customer_id", nullable = false)
+    private String customerId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private AccountStatus status = AccountStatus.ACTIVE;
+
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal balance = BigDecimal.ZERO;
+
+    @Column(nullable = false, length = 3)
+    private String currency;
+
+    @Version
+    private Long version;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt = Instant.now();
+}</script>
+<script type="text/plain" id="src-ex-repo">package com.banking.account.repository;
+
+import com.banking.account.entity.Account;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.Optional;
+import java.util.UUID;
+
+public interface AccountRepository extends JpaRepository<Account, UUID> {
+
+    Optional<Account> findByAccountNumber(String accountNumber);
+
+    Page<Account> findByCustomerId(String customerId, Pageable pageable);
+
+    boolean existsByCustomerIdAndCurrency(String customerId, String currency);
+}</script>
+<script type="text/plain" id="src-ex-service">package com.banking.account.service;
+
+import com.banking.account.dto.request.CreateAccountRequest;
+import com.banking.account.dto.response.AccountResponse;
+import com.banking.account.entity.Account;
+import com.banking.account.mapper.AccountMapper;
+import com.banking.account.repository.AccountRepository;
+import com.banking.account.util.AccountNumberGenerator;
+import com.banking.common.exception.BankingException;
+import com.banking.common.exception.ErrorCode;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+public class AccountServiceImpl implements AccountService {
+
+    private final AccountRepository accountRepository;
+    private final AccountMapper accountMapper;
+    private final AccountNumberGenerator numberGenerator;
+
+    @Override
+    @Transactional
+    public AccountResponse createAccount(CreateAccountRequest request) {
+        if (accountRepository.existsByCustomerIdAndCurrency(request.customerId(), request.currency())) {
+            throw new BankingException(ErrorCode.DUPLICATE_ACCOUNT,
+                    "Customer ka " + request.currency() + " account pehle se hai");
+        }
+        Account account = accountMapper.toEntity(request);
+        account.setAccountNumber(numberGenerator.next());
+        Account saved = accountRepository.save(account);
+        return accountMapper.toResponse(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AccountResponse getByAccountNumber(String accountNumber) {
+        Account account = accountRepository.findByAccountNumber(accountNumber)
+                .orElseThrow(() -> new BankingException(ErrorCode.ACCOUNT_NOT_FOUND,
+                        "Account " + accountNumber + " nahi mila"));
+        return accountMapper.toResponse(account);
+    }
+}</script>
+<script type="text/plain" id="src-ex-controller">package com.banking.account.controller;
+
+import com.banking.account.dto.request.CreateAccountRequest;
+import com.banking.account.dto.response.AccountResponse;
+import com.banking.account.service.AccountService;
+import com.banking.common.dto.ApiResponse;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/v1/accounts")
+@RequiredArgsConstructor
+public class AccountController {
+
+    private final AccountService accountService;
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<AccountResponse> create(@Valid @RequestBody CreateAccountRequest request) {
+        return new ApiResponse<>(accountService.createAccount(request));
+    }
+
+    @GetMapping("/{accountNumber}")
+    public ApiResponse<AccountResponse> get(@PathVariable String accountNumber) {
+        return new ApiResponse<>(accountService.getByAccountNumber(accountNumber));
+    }
+}</script>
+<script type="text/plain" id="src-ex-handler">package com.banking.account.exception;
+
+import com.banking.common.dto.ApiResponse;
+import com.banking.common.dto.ErrorResponse;
+import com.banking.common.exception.BankingException;
+import com.banking.common.exception.ErrorCode;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+@Slf4j
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(BankingException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBanking(BankingException ex) {
+        ErrorResponse error = new ErrorResponse(ex.getErrorCode(), ex.getMessage());
+        return ResponseEntity.status(ex.getStatus()).body(new ApiResponse<Void>(error));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException ex) {
+        String msg = ex.getBindingResult().getFieldErrors().stream()
+                .map(f -> f.getField() + ": " + f.getDefaultMessage())
+                .findFirst()
+                .orElse("Invalid request");
+        ErrorResponse error = new ErrorResponse(ErrorCode.VALIDATION_ERROR, msg);
+        return ResponseEntity.badRequest().body(new ApiResponse<Void>(error));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnknown(Exception ex) {
+        log.error("Unexpected error", ex);
+        ErrorResponse error = new ErrorResponse(ErrorCode.INTERNAL_ERROR, "Kuch galat ho gaya");
+        return ResponseEntity.internalServerError().body(new ApiResponse<Void>(error));
+    }
+}</script>
+
+<script>
+(function(){
+const FILES = [
+  {g:'Aapka likha code · common-library', id:'error-code', name:'ErrorCode.java', st:'done', path:'common-library/src/main/java/com/banking/common/exception/ErrorCode.java',
+   sum:'Poore platform ke saare error types, aur har error ka HTTP status. Ek hi jagah se tay hota hai ki kaunsi galti par client ko kaunsa code milega.'},
+  {g:'Aapka likha code · common-library', id:'banking-exception', name:'BankingException.java', st:'done', path:'common-library/src/main/java/com/banking/common/exception/BankingException.java',
+   sum:'Aapka custom exception. Service mein koi galti ho toh yahi throw hoga, ErrorCode ke saath.'},
+  {g:'Aapka likha code · common-library', id:'api-response', name:'ApiResponse.java', st:'done', path:'common-library/src/main/java/com/banking/common/dto/ApiResponse.java',
+   sum:'Har API response ka wrapper. JSON mein ya toh "data" aayega ya "error".'},
+  {g:'Aapka likha code · common-library', id:'error-response', name:'ErrorResponse.java', st:'done', path:'common-library/src/main/java/com/banking/common/dto/ErrorResponse.java',
+   sum:'Error ka JSON shape: message, code aur status.'},
+  {g:'Aapka likha code · common-library', id:'paged-response', name:'PagedResponse.java', st:'done', path:'common-library/src/main/java/com/banking/common/dto/PagedResponse.java',
+   sum:'Lambi lists ko pages mein bhejne ke liye (jaise transaction history).'},
+  {g:'Aapka likha code · common-library', id:'event-type', name:'EventType.java', st:'warn', stl:'commit baaki', path:'common-library/src/main/java/com/banking/common/event/EventType.java',
+   sum:'Saare Kafka events ki list, aur har event kis topic par jaayega.'},
+  {g:'Aapka likha code · common-library', id:'base-event', name:'BaseEvent.java', st:'warn', stl:'commit baaki', path:'common-library/src/main/java/com/banking/common/event/BaseEvent.java',
+   sum:'Saare Kafka events ka parent class. Har event ke common fields yahan hain.'},
+  {g:'Aapka likha code · common-library', id:'datetime-util', name:'DateTimeUtil.java', st:'bad', stl:'build todega', path:'common-library/src/main/java/com/banking/common/util/DateTimeUtil.java',
+   sum:'Date/time helpers ke liye bani class. Abhi khaali hai, aur ek typo ki wajah se compile nahi hogi.'},
+  {g:'Build files (Maven)', id:'root-pom', name:'pom.xml (root)', st:'done', lang:'xml', path:'pom.xml',
+   sum:'Poore project ka parent. Spring Boot version, Java version, modules ki list aur common dependencies yahan hain.'},
+  {g:'Build files (Maven)', id:'common-pom', name:'common-library/pom.xml', st:'done', lang:'xml', path:'common-library/pom.xml',
+   sum:'Shared library ki build file. Isme woh libraries hain jo ErrorCode, ApiResponse aur events ko chahiye.'},
+  {g:'Aage aise likhoge (examples)', id:'ex-entity', name:'Account.java', st:'ex', path:'account-service/.../entity/Account.java',
+   sum:'EXAMPLE: yeh file abhi khaali hai. Entity ek Java class hai jo database ki ek table ko represent karti hai. Samjhaane ke liye simple rakha hai; aapke plan mein balance alag AccountBalance entity mein hai.'},
+  {g:'Aage aise likhoge (examples)', id:'ex-repo', name:'AccountRepository.java', st:'ex', path:'account-service/.../repository/AccountRepository.java',
+   sum:'EXAMPLE: database se baat karne wala interface. Iski implementation Spring Data JPA khud banata hai.'},
+  {g:'Aage aise likhoge (examples)', id:'ex-service', name:'AccountServiceImpl.java', st:'ex', path:'account-service/.../service/AccountServiceImpl.java',
+   sum:'EXAMPLE: business logic. Yahan dikhega ki aapka BankingException aur ErrorCode asli code mein kaise use honge.'},
+  {g:'Aage aise likhoge (examples)', id:'ex-controller', name:'AccountController.java', st:'ex', path:'account-service/.../controller/AccountController.java',
+   sum:'EXAMPLE: HTTP endpoints. Request yahin aati hai, aur ApiResponse mein lipta jawab yahin se jaata hai.'},
+  {g:'Aage aise likhoge (examples)', id:'ex-handler', name:'GlobalExceptionHandler.java', st:'ex', path:'account-service/.../exception/GlobalExceptionHandler.java',
+   sum:'EXAMPLE: koi bhi exception aaye, yeh use pakad kar saaf JSON error bana deta hai. Yahan ErrorCode, BankingException, ErrorResponse aur ApiResponse chaaron ek saath kaam karte hain.'}
+];
+
+const NOTES = {
+'error-code': [
+ [1,1,"`package` batata hai ki file kis folder mein hai: `com/banking/common/exception`. Doosri files ise isi poore naam se import karengi."],
+ [3,4,"Imports: Lombok ka `Getter`, aur Spring ka `HttpStatus` enum, jisme 400, 404, 409 jaise saare HTTP codes naam ke saath hain."],
+ [6,7,"`@Getter` Lombok annotation hai: compile ke time har field ka getter khud ban jaata hai, yahan `getStatus()`. `enum` matlab fixed constants ki list. Inke alawa koi naya ErrorCode program chalte waqt ban hi nahi sakta."],
+ [9,14,"Generic errors jo kisi bhi service mein aa sakte hain. Har constant ke bracket wali value constructor (line 41) ko jaati hai. Jaise `VALIDATION_ERROR` ke saath 400 BAD_REQUEST."],
+ [16,21,"Account errors. 404 matlab cheez mili nahi. 409 CONFLICT matlab request sahi hai, lekin account ki current state se takraati hai (account frozen hai, ya balance kam hai)."],
+ [23,27,"Transaction errors. 422 UNPROCESSABLE_ENTITY matlab data samajh aaya, lekin process nahi ho saka. `LIMIT_EXCEEDED` jaise daily limit cross hone par."],
+ [29,37,"Fraud, notification aur gateway errors. Dhyaan do: sirf aakhri constant ke baad semicolon `;` hai. Isse Java samajhta hai ki constants khatam, ab fields aur methods shuru."],
+ [39,39,"Har constant ka status yahan store hota hai. `final` matlab ek baar set hone ke baad badal nahi sakta."],
+ [41,43,"Enum ka constructor. Yeh hamesha private hota hai, chahe likho ya na likho. Java har constant banate waqt ise ek baar call karta hai, jaise `ErrorCode(HttpStatus.NOT_FOUND)`."]
+],
+'banking-exception': [
+ [1,4,"Package aur imports. `HttpStatus` isliye chahiye kyunki line 25 wala method HTTP status return karta hai."],
+ [6,7,"`@Getter` se `getErrorCode()` banega. `extends RuntimeException` matlab yeh unchecked exception hai: method par `throws` likhna zaroori nahi. Aur Spring ka `@Transactional` default rollback bhi sirf RuntimeException par karta hai, isliye yeh sahi choice hai."],
+ [9,9,"Har exception ke andar ek ErrorCode. Isi se baad mein tay hoga ki client ko kaunsa HTTP status bhejna hai."],
+ [11,14,"Sabse zyada use hone wala constructor. `super(message)` parent RuntimeException ko message deta hai, jo baad mein `getMessage()` se milta hai."],
+ [16,19,"Jab koi doosra exception pakda ho (jaise database error) aur use wrap karna ho. `cause` saath rakhne se original stack trace log mein dikhta hai, debugging aasaan hoti hai."],
+ [21,23,"Shortcut constructor. `this(...)` isi class ka doosra constructor call karta hai, default `INTERNAL_ERROR` ke saath. Isko constructor chaining kehte hain."],
+ [25,27,"Helper method. GlobalExceptionHandler mein seedha `ex.getStatus()` likh sakoge, `ex.getErrorCode().getStatus()` ki jagah."]
+],
+'api-response': [
+ [1,4,"Imports: Jackson ka `JsonInclude` (JSON control karne ke liye) aur Lombok ka `Getter`."],
+ [6,7,"`@Getter` se `getData()` aur `getError()` banenge. Jackson inhi getters ko dekh kar JSON fields banata hai. `@JsonInclude(NON_NULL)` matlab jo field null hai woh JSON mein aayegi hi nahi."],
+ [8,8,"`<T>` generics hai. T ek placeholder type hai: `ApiResponse<AccountResponse>`, `ApiResponse<List<TransactionResponse>>`, kuch bhi. Ek hi class har type ke data ke liye."],
+ [10,12,"Do fields, dono `final`. Ek response mein ya data hoga ya error, dono ek saath nahi."],
+ [14,17,"Success constructor: `new ApiResponse<>(account)`. `error` null rahega, toh JSON mein sirf `data` dikhega."],
+ [19,22,"Error constructor. Dono constructors ka ek hi parameter hai; Java argument ka type dekh kar sahi wala chunta hai. Tip: aage chalke `ApiResponse.success(data)` aur `ApiResponse.failure(error)` jaise static methods zyada saaf padhte hain."]
+],
+'error-response': [
+ [1,4,"`ErrorCode` doosre package (`exception`) se import ho raha hai. Matlab dto package exception package par depend karta hai."],
+ [6,15,"Teen fields: `message` insaan ke padhne ke liye, `code` program ke liye (jaise `ACCOUNT_NOT_FOUND`), `status` HTTP number. Yahan `@Getter` har field par alag laga hai; class ke upar ek baar lagana bhi same kaam karta, jaise ApiResponse mein kiya."],
+ [17,21,"Constructor ErrorCode se sab nikaal leta hai. `name()` enum constant ka naam string mein deta hai: \"ACCOUNT_NOT_FOUND\". `getStatus().value()` HttpStatus se number deta hai: 404."]
+],
+'paged-response': [
+ [3,5,"Lombok ke `Getter` aur `Builder`, aur Java ka `List`."],
+ [7,8,"`@Builder` builder pattern banata hai. Itne fields ho toh constructor confusing hota hai, builder se saaf likhte hain: `PagedResponse.<AccountResponse>builder().data(list).page(0).size(20).build()`"],
+ [9,11,"Generic T phir se. `data` mein sirf current page ke items hain, jaise 20 accounts."],
+ [13,21,"`page`: kaunsa page (0 se shuru). `size`: ek page mein kitne. `totalElements`: total records. `totalPages`: kitne pages. `last`: kya yeh aakhri page hai. Yeh sab Spring Data ke `Page` object se milta hai. Tip: ek `static from(Page<T> page)` method banana kaam aayega."]
+],
+'event-type': [
+ [5,6,"`@Getter` se `getTopic()` banega. `enum EventType`: system ke saare events ki fixed list."],
+ [7,21,"Har event ke saath uska Kafka topic juda hai. Ek domain ke saare events ek topic mein: account ke dono events `banking.account.events` par jaayenge."],
+ [23,27,"Field + constructor, bilkul ErrorCode wala pattern. Is baar value ek String hai: topic ka naam."],
+ [29,33,"`Topics` ek nested `static` class hai jisme sirf constants hain. static hone se bina object ke use hoti hai: `EventType.Topics.ACCOUNT`. Kafka listener mein kaam aayega: `@KafkaListener(topics = EventType.Topics.ACCOUNT)`."],
+ [35,37,"Private constructor, taaki koi `new Topics()` na kar sake. Sirf-constants wali class ke liye yeh common Java trick hai."]
+],
+'base-event': [
+ [3,9,"Imports: `JsonIgnore` (Jackson), Lombok ke teen annotations, `Instant` (UTC time) aur `UUID` (unique id)."],
+ [11,13,"`@Getter` + `@Setter` har field ke liye. `@NoArgsConstructor` khaali constructor banata hai. Kafka se aaya JSON wapas object banate waqt Jackson ko khaali constructor aur setters chahiye. Isiliye yeh teen annotations hain."],
+ [14,14,"`abstract` class: iska seedha object nahi banega. Har asli event ise extend karega, jaise `class AccountCreatedEvent extends BaseEvent`."],
+ [16,16,"Saare events ka current format version. Event ka format kabhi badla toh ise 2 karoge, aur consumers purane aur naye dono pehchaan sakenge."],
+ [18,28,"Common fields: `eventId` (duplicate event pakadne ke liye), `eventType`, `aggregateId` (kis cheez ka event, jaise accountId), `occurredAt` (kab hua), `correlationId` (ek transfer ke saare events jodne ke liye), `schemaVersion`."],
+ [30,30,"`protected` constructor: sirf child classes `super(...)` se call kar sakti hain. Example: `super(EventType.ACCOUNT_CREATED, accountId, correlationId)`."],
+ [31,36,"`UUID.randomUUID()` har baar naya random id. `Instant.now()` abhi ka time UTC mein. Child class ko sirf teen cheezein deni hain, baaki apne aap set."],
+ [39,42,"`getTopic()` eventType se topic deta hai. `@JsonIgnore` isliye ki topic JSON payload mein na jaaye: yeh sirf bhejte waqt chahiye, event ke data ka hissa nahi."]
+],
+'datetime-util': [
+ [3,4,"Yeh imports sahi hain, lekin abhi use nahi hue. IDE 'unused import' warning dikhayega."],
+ [5,5,"Galti: `Duaration` naam ki koi class Java mein nahi hai. Compiler bolega `cannot find symbol` aur poora common-library build fail hoga. Sahi: `import java.time.Duration;`"],
+ [6,7,"Baaki imports bhi sahi hain, abhi unused."],
+ [9,9,"`final` class: koi ise extend nahi kar sakta. Utility class ke liye sahi hai. Tip: ek `private DateTimeUtil() {}` constructor bhi jodo, jaise Topics mein kiya, taaki koi object na bana sake."],
+ [10,12,"Khaali body. Yahan `static` helper methods aayenge, jaise `toIsoString(Instant)` ya `isWithinLast(Instant, Duration)`."]
+],
+'root-pom': [
+ [1,5,"XML header aur Maven ka `project` tag. `modelVersion` hamesha 4.0.0 hota hai."],
+ [7,12,"Parent: `spring-boot-starter-parent` 3.3.4. Isse saari Spring libraries ke aapas mein compatible versions mil jaate hain, isliye dependencies mein version nahi likhna padta. `relativePath` khaali matlab parent Maven repository se lo."],
+ [14,19,"Project ki pehchaan: groupId `com.banking`, artifactId `banking-platform`. `SNAPSHOT` matlab development version. `packaging pom` matlab yeh khud koi jar nahi banata, sirf modules sambhalta hai."],
+ [21,29,"7 modules. Root se `mvn install` chalao toh Maven sabko build karta hai aur order khud tay karta hai: common-library pehle, kyunki baaki uspar depend karte hain."],
+ [31,35,"Properties matlab variables. `java.version` 21 ko Spring parent padhta hai aur compiler set karta hai. Baaki do versions neeche `${...}` se use hote hain."],
+ [37,52,"`dependencyManagement` mein dependencies add nahi hoti, sirf version tay hota hai. Spring Cloud BOM (`scope import`) Gateway, Eureka, OpenFeign sabke versions deta hai. common-library ka version bhi yahin, toh services mein sirf groupId aur artifactId kaafi hai."],
+ [54,65,"Yeh dependencies har module mein apne aap aati hain. Lombok `optional` (sirf compile ke liye), aur `spring-boot-starter-test` sirf tests mein (JUnit, Mockito, AssertJ)."],
+ [67,82,"Spring Boot plugin `mvn package` par executable jar banata hai jo `java -jar` se chalta hai. Lombok final jar se bahar rakha hai, kyunki runtime par uski zaroorat nahi."]
+],
+'common-pom': [
+ [7,11,"Parent ab root pom hai. Isliye Java 21, Lombok aur test libraries yahan apne aap aa jaati hain."],
+ [13,16,"`packaging jar`: yeh normal library jar banega, jise baaki services dependency ki tarah use karengi."],
+ [19,30,"Web, validation aur security starters. Web se `HttpStatus` aur Jackson milte hain, jo ErrorCode aur ApiResponse ko chahiye. Dhyaan do: library mein poore starters bhaari hain aur har service mein aa jaayenge. Isiliye api-gateway ne starter-web exclude kiya hai, kyunki gateway reactive (WebFlux) hai."],
+ [31,47,"JJWT library, JWT token banane aur verify karne ke liye. `jjwt-api` compile mein chahiye; `impl` aur `jackson` sirf runtime par (`scope runtime`). Iska code abhi kahin likha nahi hai."],
+ [48,51,"`jsr310` module Jackson ko `Instant`, `LocalDateTime` jaise java.time types JSON mein badalna sikhata hai. BaseEvent ka `occurredAt` isi se serialize hoga."],
+ [54,64,"`skip true`: library ka executable jar nahi banana. Skip na karo toh Boot plugin main class dhoondega, aur library mein main class hoti hi nahi, build fail."]
+],
+'ex-entity': [
+ [3,9,"`jakarta.persistence` JPA ke annotations deta hai (Spring Boot 3 mein `javax` nahi, `jakarta`). `BigDecimal` paison ke liye: `double` mein rounding galtiyan hoti hain, bank mein kabhi double mat use karna."],
+ [11,16,"`@Entity` batata hai ki yeh class ek DB table hai. `@Table(name = \"accounts\")` table ka naam. Lombok getters/setters, aur `@NoArgsConstructor` kyunki JPA ko khaali constructor chahiye."],
+ [18,20,"`@Id` primary key. `GenerationType.UUID` se id apne aap random UUID banegi."],
+ [22,26,"`@Column` column ki settings: naam, `nullable = false` (khaali nahi ho sakta), `unique = true` (do accounts ka same number nahi)."],
+ [28,30,"`EnumType.STRING`: DB mein \"ACTIVE\" likha jaayega, number nahi. Number (ORDINAL) khatarnaak hai: enum ka order badla toh data galat ho jaata hai."],
+ [32,33,"`precision 19, scale 4`: 19 digits total, 4 decimal ke baad. Default balance zero."],
+ [35,36,"`length = 3`: currency ka 3-letter code, jaise INR ya USD. Aapka khaali `CurrencyValidator` isi ko check karega."],
+ [38,39,"`@Version` optimistic locking. Do requests ek saath same account badlein, toh doosri fail hogi, balance galat nahi hoga. Bank ke liye bahut zaroori."],
+ [41,42,"`updatable = false`: account banne ka time baad mein kabhi nahi badlega."]
+],
+'ex-repo': [
+ [10,10,"Sirf interface likhna hai, class nahi. `JpaRepository<Account, UUID>` se `save`, `findById`, `findAll`, `delete` sab free mein mil jaate hain. Pehla type entity, doosra uski id ka type."],
+ [12,12,"Method ka naam hi query hai. Spring `findByAccountNumber` padh kar khud SQL banata hai: `SELECT * FROM accounts WHERE account_number = ?`. `Optional` matlab result ho bhi sakta hai, nahi bhi."],
+ [14,14,"`Pageable` do aur `Page` wapas lo. Yahi Page baad mein aapke PagedResponse mein badlega."],
+ [16,16,"`existsBy...And...` sirf true/false deta hai. Duplicate account check ke liye."]
+],
+'ex-service': [
+ [3,13,"Imports. Dhyaan do, `BankingException` aur `ErrorCode` aapki common-library se aa rahe hain (`com.banking.common`)."],
+ [15,16,"`@Service` se Spring is class ka object (bean) khud banata hai. `@RequiredArgsConstructor` saare `final` fields ka constructor banata hai, aur Spring usi se dependencies inject karta hai."],
+ [17,17,"`implements AccountService`: interface alag, implementation alag. Isse testing mein mock karna aasaan hota hai."],
+ [19,21,"Teen dependencies. Inhe kabhi `new` se nahi banana; Spring khud deta hai. Isko dependency injection kehte hain."],
+ [23,25,"`@Override` matlab interface ka method implement ho raha hai. `@Transactional`: method ke andar ka saara DB kaam ek transaction mein. Beech mein RuntimeException aaya (jaise BankingException), toh sab rollback."],
+ [26,29,"Yahan aapka likha code kaam aata hai. Duplicate mila toh `BankingException` with `DUPLICATE_ACCOUNT` (409). `request.customerId()` isliye kyunki request ek Java `record` hoga."],
+ [30,33,"Request ko Entity mein badlo (MapStruct mapper), account number lagao, save karo, aur Entity ko Response DTO mein badal ke lauta do. Entity seedha bahar kabhi nahi bhejte."],
+ [36,38,"`readOnly = true`: sirf padhna hai, DB ko thoda optimize karne ka mauka milta hai."],
+ [39,42,"`orElseThrow`: Optional khaali hua toh exception. `ACCOUNT_NOT_FOUND` ki wajah se client ko 404 jaayega."]
+],
+'ex-controller': [
+ [12,15,"`@RestController`: is class ke methods HTTP requests sambhalte hain aur return value JSON ban jaati hai. `@RequestMapping` base URL. Versioning (`/v1`) se baad mein v2 laana aasaan."],
+ [17,17,"Controller sirf service ko call karta hai. Business logic controller mein nahi likhte."],
+ [19,23,"`POST /api/v1/accounts`. `@RequestBody` JSON ko Java object banata hai. `@Valid` DTO ke rules check karta hai (jaise `@NotBlank`); fail hua toh MethodArgumentNotValidException. Jawab aapke `ApiResponse` mein lipta jaata hai, status 201 CREATED."],
+ [25,28,"`GET /api/v1/accounts/ACC-1001`. `@PathVariable` URL ka hissa variable mein daal deta hai."]
+],
+'ex-handler': [
+ [13,15,"`@RestControllerAdvice`: saare controllers ke exceptions yahan aate hain. `@Slf4j` se `log` variable milta hai."],
+ [17,21,"Aapka poora common-library yahan judta hai: BankingException se ErrorCode aur message nikala, ErrorResponse banaya, ApiResponse mein lapeta, aur `ex.getStatus()` se HTTP status lagaya. `new ApiResponse<Void>(error)` mein type likhna zaroori hai, taaki Java error wala constructor chune."],
+ [23,31,"`@Valid` fail hone par. Pehli field error ka message nikaal ke 400 VALIDATION_ERROR bhejte hain."],
+ [33,38,"Safety net: koi bhi anjaana exception. Asli error log mein jaata hai, lekin client ko andar ki details nahi dikhate, sirf generic message. Security ke liye zaroori."]
+]
+};
+
+const STL = {done:['st-ok','done'], warn:['st-warn','adhoora'], bad:['st-bad','bug'], ex:['st-ex','example']};
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const RJ = /(\/\/.*$)|("(?:[^"\\]|\\.)*")|(@\w+)|\b(package|import|public|private|protected|final|static|class|interface|enum|extends|implements|new|return|this|super|abstract|void|int|long|boolean|throw|if|true|false|null)\b|\b([A-Z][A-Za-z0-9_]*)\b|(\b\d+(?:\.\d+)?\b)/g;
+function hiJava(line){
+  let out = '', last = 0, m; RJ.lastIndex = 0;
+  while ((m = RJ.exec(line))) {
+    out += esc(line.slice(last, m.index));
+    const c = m[1] ? 'c' : m[2] ? 's' : m[3] ? 'a' : m[4] ? 'k' : m[5] ? (/^[A-Z0-9_]+$/.test(m[5]) && m[5].length > 1 ? 'cn' : 't') : 'n';
+    out += '<span class="' + c + '">' + esc(m[0]) + '</span>'; last = RJ.lastIndex;
+  }
+  return out + esc(line.slice(last));
+}
+const RX = /(<!--.*?-->)|(<\/?[\w.:-]+)|([\w:.-]+)(?==")|("[^"]*")|(\/?>|\?>)|(\$\{[^}]+\})/g;
+function hiXml(line){
+  let out = '', last = 0, m; RX.lastIndex = 0;
+  while ((m = RX.exec(line))) {
+    out += esc(line.slice(last, m.index));
+    const c = m[1] ? 'x-com' : m[2] ? 'x-tag' : m[3] ? 'x-attr' : m[4] ? 'x-val' : m[5] ? 'x-tag' : 'x-var';
+    out += '<span class="' + c + '">' + esc(m[0]) + '</span>'; last = RX.lastIndex;
+  }
+  return out + esc(line.slice(last));
+}
+function noteHtml(t){
+  return esc(t).replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/^(Galti:)/, '<span class="warnx">$1</span>')
+    .replace(/(Tip:)/g, '<span class="tip">$1</span>');
+}
+
+const flist = document.getElementById('flist');
+const groups = {};
+FILES.forEach(f => {
+  if (!groups[f.g]) { const d = document.createElement('div'); d.className = 'fgroup'; d.innerHTML = '<h3>' + f.g + '</h3>'; flist.appendChild(d); groups[f.g] = d; }
+  const b = document.createElement('button'); b.type = 'button'; b.dataset.id = f.id;
+  const s = STL[f.st];
+  b.innerHTML = '<span>' + esc(f.name) + '</span><span class="status ' + s[0] + '">' + esc(f.stl || s[1]) + '</span>';
+  b.onclick = () => openFile(f.id, true);
+  groups[f.g].appendChild(b);
+});
+
+let curFile = null, curNote = -1, lineEls = [];
+function openFile(id, scroll){
+  const f = FILES.find(x => x.id === id); curFile = f; curNote = -1;
+  flist.querySelectorAll('button').forEach(b => b.classList.toggle('cur', b.dataset.id === id));
+  const s = STL[f.st];
+  document.getElementById('fname').innerHTML = esc(f.name) + ' <span class="status ' + s[0] + '">' + esc(f.stl || s[1]) + '</span>';
+  document.getElementById('fpath').textContent = f.path;
+  document.getElementById('fsum').textContent = f.sum;
+  const src = document.getElementById('src-' + id).textContent.replace(/^\n/, '').replace(/\s+$/, '');
+  const notes = NOTES[id] || [];
+  const startOf = {}; notes.forEach((n, i) => { if (!(n[0] in startOf)) startOf[n[0]] = i + 1; });
+  const hl = f.lang === 'xml' ? hiXml : hiJava;
+  const code = document.getElementById('fcode');
+  code.innerHTML = src.split('\n').map((l, i) => {
+    const n = i + 1, mk = startOf[n];
+    return '<span class="ln' + (mk ? ' mk' : '') + (id === 'datetime-util' && n === 5 ? ' err' : '') + '" data-n="' + n + '"><i>' + n + '</i><b>' + (mk || '') + '</b>' + hl(l) + '</span>';
+  }).join('');
+  code.scrollTop = 0;
+  lineEls = [...code.children];
+  lineEls.forEach(el => el.onclick = () => { const n = +el.dataset.n; const k = notes.findIndex(x => n >= x[0] && n <= x[1]); if (k >= 0) pick(k, 'note'); });
+  const box = document.getElementById('fnotes');
+  box.innerHTML = '';
+  notes.forEach((n, i) => {
+    const b = document.createElement('button'); b.type = 'button';
+    b.innerHTML = '<span class="nb">' + (i + 1) + '</span><span><span class="nl">' + (n[0] === n[1] ? 'line ' + n[0] : 'lines ' + n[0] + '–' + n[1]) + '</span>' + noteHtml(n[2]) + '</span>';
+    b.onclick = () => pick(i, 'code');
+    box.appendChild(b);
+  });
+  box.scrollTop = 0;
+  if (scroll && window.matchMedia('(max-width:980px)').matches) document.querySelector('.fview').scrollIntoView({behavior:'smooth', block:'start'});
+}
+function pick(i, scrollWhat){
+  const notes = NOTES[curFile.id]; const sameAgain = curNote === i; curNote = sameAgain ? -1 : i;
+  const [a, b] = curNote >= 0 ? notes[curNote] : [0, -1];
+  lineEls.forEach(el => { const n = +el.dataset.n; const on = n >= a && n <= b; el.classList.toggle('hl', on); el.classList.toggle('dimx', curNote >= 0 && !on); });
+  const nb = [...document.getElementById('fnotes').children];
+  nb.forEach((el, k) => el.classList.toggle('cur', k === curNote));
+  if (curNote < 0) return;
+  const inner = (box, el) => { const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop; if (top < box.scrollTop || top > box.scrollTop + box.clientHeight - 40) box.scrollTo({top: Math.max(0, top - 60), behavior:'smooth'}); };
+  if (scrollWhat === 'code') inner(document.getElementById('fcode'), lineEls[a - 1]);
+  else inner(document.getElementById('fnotes'), nb[curNote]);
+}
+openFile('error-code', false);
+})();
+</script>
+
+<script>
+(function(){
+const BEATS = [
+  [ // 1 intro
+    {t:"Namaste! Yeh video aapke banking-platform project ka poora recap hai: kya banana tha, kya ban chuka hai, aur aage kya karna hai."},
+    {t:"Aapne ek online bank ka backend plan kiya tha, microservices style mein. Spring Boot 3.3 aur Java 21, saath mein Kafka, PostgreSQL aur Redis."},
+    {t:"Seedhi baat pehle: structure poora bana hua hai, lekin asli code abhi shuruaat mein hai. Sirf 7 files mein code hai, 312 files khaali hain. Chaliye ek-ek karke dekhte hain."}
+  ],
+  [ // 2 micro
+    {t:"Pehle ek concept. Normal app mein sab kuch ek hi project mein hota hai: accounts, transfers, alerts, sab. Isko monolith kehte hain."},
+    {t:"Microservices mein har kaam ki alag chhoti app hoti hai. Har ek ka apna server aur apna database. Ek service gir jaaye, toh baaki chalti rehti hain."},
+    {t:"Aapke project mein aisi 6 services hain, aur ek common-library jo sab share karti hain. Root wala pom.xml in sabko ek saath jodta hai."}
+  ],
+  [ // 3 arch
+    {t:"Ab badi tasveer. User React frontend se request bhejta hai. Sabse pehle woh api-gateway par aati hai. Gateway bank ka darwaza hai, yeh JWT token check karta hai."},
+    {t:"Phir gateway request ko sahi service tak bhejta hai: account, transaction, fraud, notification ya audit."},
+    {t:"Har service ka apna PostgreSQL database hai. Koi service doosri service ke database ko seedha nahi chhooti. Isko database-per-service kehte hain."},
+    {t:"Services aapas mein Kafka ke through baat karti hain. Kafka ek message highway hai: ek service event daalti hai, doosri use sunti hai."},
+    {t:"Aur common-library mein shared code hai, jaise errors, response format aur events. Saari services ise dependency ki tarah use karengi."}
+  ],
+  [ // 4 services
+    {t:"api-gateway login check aur routing karta hai. account-service account kholta hai, balance rakhta hai, aur account freeze ya close karta hai."},
+    {t:"transaction-service deposit aur transfer sambhalta hai. fraud-service har transaction ko rules se check karta hai: bada amount, bahut jaldi-jaldi transactions, ya ajeeb location."},
+    {t:"notification-service email, SMS aur push bhejta hai. audit-service har event ka record rakhta hai, taaki baad mein jaanch ho sake. Dhyaan do, in sab ki files abhi khaali hain."}
+  ],
+  [ // 5 flow
+    {t:"Ek example lete hain. Rahul, Priya ko 5000 rupaye bhejta hai. Request gateway se hote hue transaction-service tak pahunchti hai."},
+    {t:"transaction-service transaction ko PENDING status mein save karta hai, aur Kafka par TRANSACTION_INITIATED event daalta hai."},
+    {t:"fraud-service yeh event sunta hai, apne rules chalata hai, aur decision wapas bhejta hai. Sab theek hai toh FRAUD_CLEARED."},
+    {t:"Approve hone par account-service Rahul ke account se 5000 kaatta hai aur Priya ke account mein daalta hai."},
+    {t:"Phir transaction-service status COMPLETED karta hai aur TRANSACTION_COMPLETED event bhejta hai."},
+    {t:"notification-service dono ko SMS bhejta hai, aur audit-service poora record likh leta hai."},
+    {t:"Is multi-step flow ko manage karne ko Saga pattern kehte hain. Beech mein koi step fail ho, jaise fraud block kar de, toh pichhle steps undo hote hain aur TRANSACTION_FAILED event jaata hai."}
+  ],
+  [ // 6 patterns
+    {t:"Outbox pattern: event seedha Kafka ko bhejne ki jagah, pehle usi database transaction mein ek outbox table mein likho. Phir ek background job use Kafka par bhejta hai. Isse database aur Kafka kabhi out-of-sync nahi hote."},
+    {t:"JWT: login ke baad user ko ek signed token milta hai. Har request ke saath woh token aata hai, aur gateway check karta hai ki token asli hai ya nahi."},
+    {t:"Flyway: V1 underscore create accounts schema jaisi SQL files app start hote hi tables bana deti hain. Yeh database ka version control hai."}
+  ],
+  [ // 7 structure
+    {t:"Yeh hai repo ka naksha. Root mein parent pom.xml hai jo 7 modules jodta hai. Green matlab code likha hai, yellow adhoora, grey matlab sirf khaali files."},
+    {t:"Har service ke andar same layers hain. Controller request leta hai, Service business logic chalata hai, Repository database se baat karta hai, aur Entity ek table ko represent karti hai."},
+    {t:"Iske alawa dto, mapper, config, security, aur producer-consumer folders hain. Producer aur consumer Kafka ke liye hain."},
+    {t:"docker aur docs folders mein bhi bahut saari files hain: Kafka, Postgres, Grafana setup aur design notes. Lekin abhi yeh sab khaali hain."}
+  ],
+  [ // 8 progress
+    {t:"Ab sach dekhte hain. Repo mein 312 files bilkul khaali hain, zero lines."},
+    {t:"Sirf common-library mein code likha gaya hai: 6 files poori aur 1 adhoori. Frontend mock data ke saath poora bana hai. Baaki har service ka har Java file khaali hai."},
+    {t:"Matlab aapne pehle poora naksha bana liya tha, aur phir common-library se bharna shuru kiya. Yeh sahi order hai. Ab bas bharna baaki hai."}
+  ],
+  [ // 9 ErrorCode
+    {t:"Ab code. Pehli file ErrorCode hai. Yeh ek enum hai, matlab fixed values ki list. Upar Lombok ka @Getter laga hai.", hl:[[3,4]]},
+    {t:"Har error ke saath ek HTTP status juda hai. ACCOUNT_NOT_FOUND matlab 404, INSUFFICIENT_FUNDS matlab 409 Conflict.", hl:[[11,15]]},
+    {t:"Constructor status ko field mein store karta hai, aur @Getter apne aap getStatus method bana deta hai. Isse har error ka status ek hi jagah tay hota hai.", hl:[[17,21]]}
+  ],
+  [ // 10 BankingException
+    {t:"Doosri file BankingException hai, aapka apna exception. Yeh RuntimeException ko extend karta hai.", hl:[[2,2]]},
+    {t:"Isme ErrorCode store hota hai. Teen constructors hain: error code ke saath message, saath mein asli cause, ya sirf message.", hl:[[4,14]]},
+    {t:"Teesra constructor sirf message leta hai, aur default INTERNAL_ERROR laga deta hai. getStatus seedha HTTP status de deta hai.", hl:[[16,22]]},
+    {t:"Service mein aise use hoga: throw new BankingException, ErrorCode dot ACCOUNT_NOT_FOUND. Baad mein GlobalExceptionHandler ise pakad ke sahi JSON response banayega."}
+  ],
+  [ // 11 responses
+    {t:"ApiResponse ek wrapper hai. Har API ka jawab ek hi shape mein jaayega: ya toh data, ya error.", hl:[[2,8]]},
+    {t:"@JsonInclude NON_NULL ka matlab: jo field null hai, woh JSON mein dikhegi hi nahi. Isliye success par sirf data dikhta hai.", hl:[[1,1]]},
+    {t:"ErrorResponse, ErrorCode se code aur status nikaal leta hai. Right side dekho, error par client ko aisa JSON milega.", hl:[[10,19]]},
+    {t:"PagedResponse lists ke liye hai: page number, size aur total. Taaki hazaar records ek saath na bhejne padein.", hl:[[21,25]]}
+  ],
+  [ // 12 events
+    {t:"Ab events. EventType enum batata hai ki system mein kaunse events hote hain.", hl:[[1,9]]},
+    {t:"Har event ek Kafka topic se juda hai. ACCOUNT_CREATED jaata hai banking.account.events par, aur TRANSACTION_INITIATED jaata hai banking.transaction.events par.", hl:[[11,15]]},
+    {t:"BaseEvent saare events ka parent class hai. Har event mein eventId, type, aggregateId aur time hoga.", hl:[[18,22]]},
+    {t:"correlationId se ek transfer ke saare events ek saath trace ho sakte hain. schemaVersion se aage chalke event ka format badalna safe rahega.", hl:[[23,24]]},
+    {t:"Ek baat: yeh dono files abhi git mein commit nahi hui hain. Kaam pakka ho jaaye toh commit kar dena."}
+  ],
+  [ // 13 bug
+    {t:"Ek chhoti galti mili. DateTimeUtil mein import mein Duaration likha hai. Sahi spelling Duration hai. Is ek typo ki wajah se poora build fail hoga.", hl:[[5,5]]},
+    {t:"Fix simple hai: spelling theek karo. Uske baad class mein date aur time ke helper methods likhne hain.", hl:[[5,5]]},
+    {t:"Saath hi common-library ki chaar aur files khaali hain: MoneyUtil, MaskingUtil, CurrencyValidator aur IbanValidator.", hl:[[9,11]]}
+  ],
+  [ // 14 frontend
+    {t:"Frontend folder mein React, Vite aur Tailwind se bana UI hai, naam Meridian. Customer aur admin dono ke screens hain."},
+    {t:"Yeh abhi mock data par chalta hai, backend se juda nahi hai. Chalane ke liye: cd frontend, npm install, npm run dev."},
+    {t:"Jab backend ready hoga, mockData.js ki jagah asli API calls lagengi, gateway ke through."}
+  ],
+  [ // 15 roadmap
+    {t:"Ab aage kya karna hai. Poora plan bada hai, isliye ek-ek service end-to-end banana sabse achha tareeka hai."},
+    {t:"Step 1: common-library khatam karo. Typo fix karo, utils likho, aur mvn clean install se build check karo."},
+    {t:"Step 2: account-service, Kafka ke bina. Entity, Repository, Service, Controller, application.yml aur Postgres. Phir Postman se test karo. Spring Boot ki saari basics yahin wapas aa jaayengi."},
+    {t:"Step 3: transaction-service. Deposit aur transfer, pehle simple REST se."},
+    {t:"Step 4: Kafka jodo. Events bhejna aur sunna."},
+    {t:"Step 5: fraud, notification, audit aur gateway. Aur sabse last mein Outbox aur Saga jaise advanced patterns."}
+  ],
+  [ // 16 next
+    {t:"Aaj ka pehla kaam: DateTimeUtil ka typo fix karo, common-library build karo, aur commit kar do."},
+    {t:"Ek note: service poms mein Eureka client hai, lekin Eureka server ka koi module nahi hai. Baad mein ise hatana hoga ya server banana hoga."},
+    {t:"Bas itna hi! Jab ready ho, bolo Step 1 shuru karo. Saath mein ek-ek file likhenge aur har line samjhenge."}
+  ]
+];
+
+const $ = id => document.getElementById(id);
+const scenes = [...document.querySelectorAll('.scene')];
+const durOf = t => Math.max(3600, t.length * 62);
+
+// flatten beats
+const FLAT = []; let acc = 0;
+BEATS.forEach((arr, s) => arr.forEach((b, i) => { const d = durOf(b.t); FLAT.push({s, b:i, t:b.t, hl:b.hl, start:acc, dur:d}); acc += d; }));
+const TOTAL = acc;
+const sceneStart = BEATS.map((_, s) => FLAT.findIndex(f => f.s === s));
+const sceneDur = BEATS.map((_, s) => FLAT.filter(f => f.s === s).reduce((a, f) => a + f.dur, 0));
+const fmt = ms => { const s = Math.round(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+$('totalTime').textContent = '~' + Math.round(TOTAL / 60000) + ' minute';
+
+// syntax highlight + line wrap
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const RE = /(\/\/.*$)|("(?:[^"\\]|\\.)*")|(@\w+)|\b(package|import|public|private|protected|final|static|class|enum|extends|new|return|this|super|abstract|void|int|long|boolean|throw|true|false|null)\b|\b([A-Z][A-Za-z0-9_]*)\b|(\b\d+(?:\.\d+)?\b)/g;
+function hi(line){
+  let out = '', last = 0, m; RE.lastIndex = 0;
+  while ((m = RE.exec(line))) {
+    out += esc(line.slice(last, m.index));
+    let c = m[1] ? 'c' : m[2] ? 's' : m[3] ? 'a' : m[4] ? 'k' : m[5] ? (/^[A-Z0-9_]+$/.test(m[5]) && m[5].length > 1 ? 'cn' : 't') : 'n';
+    out += '<span class="' + c + '">' + esc(m[0]) + '</span>';
+    last = RE.lastIndex;
+    if (m[0].length === 0) RE.lastIndex++;
+  }
+  return out + esc(line.slice(last));
+}
+document.querySelectorAll('pre.code').forEach(pre => {
+  let lines = pre.textContent.replace(/\n$/, '').split('\n');
+  const err = +(pre.dataset.err || 0);
+  const nonum = pre.classList.contains('nonum');
+  pre.innerHTML = lines.map((l, i) => '<span class="ln' + (err === i + 1 ? ' err' : '') + '">' + (nonum ? '' : '<i>' + (i + 1) + '</i>') + hi(l) + '</span>').join('');
+});
+
+// progress segments, chapters, transcript
+const prog = $('prog');
+BEATS.forEach((arr, s) => {
+  const b = document.createElement('button');
+  b.className = 'seg'; b.type = 'button'; b.style.flexGrow = sceneDur[s];
+  b.setAttribute('aria-label', 'Chapter ' + (s + 1) + ': ' + scenes[s].dataset.title);
+  b.innerHTML = '<i></i>';
+  b.onclick = () => go(sceneStart[s]);
+  prog.appendChild(b);
+});
+const segs = [...prog.children];
+const chap = $('chap');
+scenes.forEach((sc, s) => {
+  const li = document.createElement('li');
+  li.innerHTML = '<button type="button"><span class="cn">' + String(s + 1).padStart(2, '0') + '</span><span>' + sc.dataset.title + '</span><span class="d">' + fmt(FLAT[sceneStart[s]].start) + '</span></button>';
+  li.firstChild.onclick = () => { go(sceneStart[s]); $('player').scrollIntoView({behavior:'smooth', block:'start'}); };
+  chap.appendChild(li);
+});
+const chapBtns = [...chap.querySelectorAll('button')];
+const trans = $('trans'); const transBtns = [];
+scenes.forEach((sc, s) => {
+  const box = document.createElement('div');
+  box.innerHTML = '<h3>' + String(s + 1).padStart(2, '0') + ' · ' + sc.dataset.title + '</h3>';
+  FLAT.forEach((f, i) => { if (f.s !== s) return;
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = f.t;
+    b.onclick = () => { go(i); $('player').scrollIntoView({behavior:'smooth', block:'start'}); };
+    box.appendChild(b); transBtns[i] = b; });
+  trans.appendChild(box);
+});
+
+// state
+let idx = 0, elapsed = 0, playing = false, started = false, speed = 1, voice = false, lastT = 0, spokenDone = false, speakToken = 0;
+const SPEEDS = [1, 1.25, 1.5, 0.75];
+const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>';
+
+function render(){
+  const f = FLAT[idx];
+  scenes.forEach((sc, s) => sc.classList.toggle('active', s === f.s));
+  const sc = scenes[f.s];
+  sc.querySelectorAll('[data-at]').forEach(el => { const at = +el.dataset.at; el.classList.toggle('show', f.b >= at); el.classList.toggle('now', f.b === at && el.matches('.step,.rm')); });
+  const main = sc.querySelector('pre.code[data-main]');
+  if (main) {
+    const ranges = f.hl || null;
+    main.classList.toggle('focus', !!ranges);
+    [...main.children].forEach((ln, i) => { const n = i + 1; ln.classList.toggle('hl', !!ranges && ranges.some(([a, b]) => n >= a && n <= b)); });
+  }
+  const cap = $('cap');
+  cap.classList.add('fade');
+  setTimeout(() => { cap.textContent = f.t; cap.classList.remove('fade'); }, 160);
+  $('where').textContent = (f.s + 1) + '/' + scenes.length + ' · ' + scenes[f.s].dataset.title;
+  chapBtns.forEach((b, s) => b.classList.toggle('cur', s === f.s));
+  transBtns.forEach((b, i) => b.classList.toggle('cur', i === idx));
+  $('overlay').hidden = started;
+  updateBar();
+}
+function updateBar(){
+  const f = FLAT[idx];
+  let frac = Math.min(1, elapsed / f.dur);
+  if (voice && playing && !spokenDone) frac = Math.min(frac, .97);
+  segs.forEach((sg, s) => {
+    let w = 0;
+    if (s < f.s) w = 1; else if (s === f.s) w = (f.start - FLAT[sceneStart[s]].start + frac * f.dur) / sceneDur[s];
+    sg.firstChild.style.width = (w * 100) + '%';
+  });
+  $('time').textContent = fmt(f.start + frac * f.dur) + ' / ' + fmt(TOTAL);
+  $('bPlay').innerHTML = playing ? ICON_PAUSE : ICON_PLAY;
+  $('bPlay').setAttribute('aria-label', playing ? 'Pause' : 'Play');
+}
+function go(i){
+  idx = Math.max(0, Math.min(FLAT.length - 1, i));
+  elapsed = 0; spokenDone = false;
+  render();
+  if (playing && voice) speak(FLAT[idx].t);
+}
+function next(){
+  if (idx < FLAT.length - 1) go(idx + 1);
+  else { playing = false; stopVoice(); elapsed = FLAT[idx].dur; updateBar(); }
+}
+function setPlaying(p){
+  playing = p;
+  if (p) {
+    started = true; $('overlay').hidden = true;
+    if (idx === FLAT.length - 1 && elapsed >= FLAT[idx].dur) { go(0); }
+    lastT = performance.now();
+    if (voice) { spokenDone = false; speak(FLAT[idx].t); }
+  } else stopVoice();
+  updateBar();
+}
+function tick(t){
+  const dt = t - lastT; lastT = t;
+  if (playing) {
+    elapsed += dt * speed;
+    const f = FLAT[idx];
+    if (!voice && elapsed >= f.dur) next();
+    else if (voice && elapsed >= f.dur * 2.6) next(); // fallback if speech never ends
+    updateBar();
+  }
+  requestAnimationFrame(tick);
+}
+
+// voice (browser speech; optional)
+const synth = ('speechSynthesis' in window) ? window.speechSynthesis : null;
+let voiceList = [], curUtter = null, keepAlive = null, chosenVoice = '';
+try { chosenVoice = localStorage.getItem('recap-voice') || ''; } catch (e) {}
+function loadVoices(){
+  try { voiceList = synth.getVoices() || []; } catch (e) { voiceList = []; }
+  const sel = $('vsel'); if (!sel) return;
+  const best = autoVoice();
+  sel.innerHTML = '<option value="">Auto' + (best ? ' (' + best.name + ')' : '') + '</option>' +
+    voiceList.map(v => '<option value="' + v.name.replace(/"/g, '&quot;') + '">' + v.name.replace(/</g, '&lt;') + ' · ' + v.lang + '</option>').join('');
+  sel.value = voiceList.some(v => v.name === chosenVoice) ? chosenVoice : '';
+}
+function autoVoice(){
+  const by = (re, local) => voiceList.find(v => re.test(v.lang) && (local === undefined || v.localService === local));
+  return by(/en[-_]IN/i, true) || by(/hi[-_]IN/i, true) || by(/en[-_]IN/i) || by(/hi[-_]IN/i) || by(/^en/i, true) || by(/^en/i) || voiceList[0] || null;
+}
+function pickVoice(){
+  if (!voiceList.length) loadVoices();
+  return voiceList.find(v => v.name === chosenVoice) || autoVoice();
+}
+function vstat(msg){ $('vstat').textContent = msg; }
+$('vsel').onchange = () => {
+  chosenVoice = $('vsel').value;
+  try { localStorage.setItem('recap-voice', chosenVoice); } catch (e) {}
+  if (voice && playing) { elapsed = 0; spokenDone = false; speak(FLAT[idx].t); }
+};
+function speak(text){
+  if (!synth) return;
+  const tok = ++speakToken;
+  try { synth.cancel(); } catch (e) {}
+  clearInterval(keepAlive);
+  // Chrome drops speech that starts right after cancel(), so wait a moment
+  setTimeout(() => {
+    if (tok !== speakToken) return;
+    try {
+      const u = new SpeechSynthesisUtterance(text.replace(/_/g, ' ').replace(/₹/g, 'rupees '));
+      const v = pickVoice();
+      if (v) { u.voice = v; u.lang = v.lang; vstat('Bol raha hai: ' + v.name + '. Awaaz achhi na lage toh doosri voice chuno.'); }
+      else { u.lang = 'en-IN'; vstat('Default voice chal rahi hai.'); }
+      u.rate = Math.min(1.7, 0.98 * speed);
+      u.onend = () => { if (tok !== speakToken) return; clearInterval(keepAlive); spokenDone = true;
+        setTimeout(() => { if (tok === speakToken && playing && voice) next(); }, 450); };
+      u.onerror = ev => { if (tok !== speakToken) return; if (ev.error !== 'interrupted' && ev.error !== 'canceled') vstat('Awaaz nahi chal paayi (' + ev.error + '). Captions padhte rahiye.'); };
+      curUtter = u; // keep a reference, otherwise Chrome may never fire onend
+      synth.speak(u);
+      // Chrome cuts online voices after ~15s; nudging pause/resume keeps them going
+      if (v && !v.localService) keepAlive = setInterval(() => { try { if (synth.speaking) { synth.pause(); synth.resume(); } } catch (e) {} }, 9000);
+    } catch (e) { vstat('Awaaz nahi chal paayi. Captions padhte rahiye.'); }
+  }, 120);
+}
+function stopVoice(){ speakToken++; clearInterval(keepAlive); try { synth && synth.cancel(); } catch (e) {} }
+if (!synth) { $('bVoice').disabled = true; $('bVoice').title = 'Is browser mein awaaz available nahi hai'; }
+else { loadVoices(); try { synth.addEventListener('voiceschanged', loadVoices); } catch (e) {} }
+
+// controls
+$('overlay').onclick = () => setPlaying(true);
+$('bPlay').onclick = () => setPlaying(!playing);
+$('bNext').onclick = () => next();
+$('bPrev').onclick = () => go(idx - 1);
+$('bNextS').onclick = () => { const s = FLAT[idx].s; if (s < scenes.length - 1) go(sceneStart[s + 1]); };
+$('bPrevS').onclick = () => { const s = FLAT[idx].s; go(FLAT[idx].b > 0 ? sceneStart[s] : sceneStart[Math.max(0, s - 1)]); };
+$('bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('bSpeed').textContent = speed + 'x'; if (playing && voice) speak(FLAT[idx].t); };
+$('bVoice').onclick = () => {
+  voice = !voice; $('bVoice').setAttribute('aria-pressed', voice);
+  $('vrow').hidden = !voice;
+  if (voice) { loadVoices(); elapsed = 0; spokenDone = false; if (!playing) setPlaying(true); else speak(FLAT[idx].t); }
+  else { stopVoice(); vstat(''); }
+};
+$('bFull').onclick = () => { const p = $('player'); try { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else if (p.requestFullscreen) p.requestFullscreen().catch(() => {}); } catch (e) {} };
+document.addEventListener('keydown', e => {
+  if (e.target.closest && e.target.closest('button') && (e.key === ' ' || e.key === 'Enter')) return;
+  if (e.key === ' ') { e.preventDefault(); setPlaying(!playing); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); next(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); go(idx - 1); }
+});
+
+render();
+requestAnimationFrame(t => { lastT = t; requestAnimationFrame(tick); });
+})();
+</script>
+
+</body>
+</html>
