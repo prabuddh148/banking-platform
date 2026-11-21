@@ -1,0 +1,12 @@
+# Shell scripts and container config must keep LF line endings, even on
+# Windows checkouts with core.autocrlf=true - otherwise bash inside the
+# containers fails with "$'\r': command not found".
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.properties    text eol=lf
+*.cfg           text eol=lf
+*.env           text eol=lf
+.env.example    text eol=lf
+*.sql           text eol=lf

@@ -1,0 +1,28 @@
+# Keep the Docker build context small: the service Dockerfiles only need the
+# poms and the Java sources (build context = repo root).
+
+# VCS / IDE / OS
+.git
+.gitignore
+.idea
+.vscode
+*.iml
+.DS_Store
+Thumbs.db
+
+# Build output (the image builds its own jars)
+**/target
+*.log
+
+# Frontend (not part of the Java images)
+frontend/node_modules
+frontend/dist
+
+# Docs and infra config (not needed to build a service jar)
+docs
+docker/**/data
+infrastructure
+
+# Local secrets
+.env
+**/.env
