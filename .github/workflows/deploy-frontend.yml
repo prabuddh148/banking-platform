@@ -1,0 +1,64 @@
+# Builds the React frontend in MOCK mode (no backend needed) and publishes it to
+# GitHub Pages: https://<user>.github.io/banking-platform/
+# Runs on every push to main that touches frontend/, or manually from the Actions tab.
+name: Deploy frontend demo to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/deploy-frontend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Build (mock data, served under /<repo>/)
+        env:
+          VITE_USE_MOCK: "true"
+          VITE_BASE: /${{ github.event.repository.name }}/
+        run: npm run build
+
+      # GitHub Pages has no server-side routing: serve index.html for unknown
+      # paths (e.g. /banking-platform/admin/fraud) so React Router can handle them.
+      - run: cp dist/index.html dist/404.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
