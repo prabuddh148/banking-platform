@@ -1,0 +1,430 @@
+openapi: 3.0.3
+info:
+  title: Fraud Service API
+  version: 1.0.0
+  description: |
+    Rule-based fraud scoring. Real checks happen asynchronously on `TRANSACTION_INITIATED` events;
+    this API lets admins review alerts, look up decisions and run dry-run checks.
+
+    Risk level: score < 30 LOW, < 60 MEDIUM, < 80 HIGH, otherwise CRITICAL.
+    Decision: LOW/MEDIUM -> APPROVE, HIGH -> REVIEW, CRITICAL -> BLOCK.
+
+    Every response is wrapped in `ApiResponse`. List endpoints return `ApiResponse<PagedResponse<T>>`.
+servers:
+  - url: http://localhost:8080
+    description: Through the API gateway (recommended)
+  - url: http://localhost:8083
+    description: fraud-service directly (still requires a valid JWT)
+security:
+  - bearerAuth: []
+tags:
+  - name: Checks
+  - name: Alerts
+  - name: Decisions
+paths:
+  /api/v1/fraud/check:
+    post:
+      tags: [Checks]
+      summary: Dry-run a fraud check (admin)
+      description: Evaluates all rules and returns the decision. Nothing is saved and no event is published.
+      operationId: checkFraud
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FraudCheckRequest'
+      responses:
+        '200':
+          description: Decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FraudDecisionApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/fraud/alerts:
+    get:
+      tags: [Alerts]
+      summary: List fraud alerts (admin)
+      operationId: listAlerts
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/AlertStatus'
+        - name: riskLevel
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/RiskLevel'
+      responses:
+        '200':
+          description: One page of alerts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FraudAlertPageApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/fraud/alerts/{id}:
+    parameters:
+      - $ref: '#/components/parameters/AlertId'
+    get:
+      tags: [Alerts]
+      summary: Get one fraud alert (admin)
+      operationId: getAlert
+      responses:
+        '200':
+          description: The alert
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FraudAlertApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/fraud/alerts/{id}/review:
+    parameters:
+      - $ref: '#/components/parameters/AlertId'
+    post:
+      tags: [Alerts]
+      summary: Approve or reject an open alert (admin)
+      description: |
+        APPROVE publishes `FRAUD_CLEARED` (with `reviewedBy`) and the transaction continues.
+        REJECT publishes `FRAUD_DETECTED` with decision BLOCK and the transaction fails.
+        Only OPEN alerts can be reviewed; reviewing twice returns 409.
+      operationId: reviewAlert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewFraudAlertRequest'
+      responses:
+        '200':
+          description: Reviewed alert
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FraudAlertApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/fraud/decisions/transaction/{transactionId}:
+    get:
+      tags: [Decisions]
+      summary: Get the fraud decision for a transaction
+      operationId: getDecisionByTransaction
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FraudDecisionApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/fraud/stats:
+    get:
+      tags: [Alerts]
+      summary: Alert and decision counts (admin)
+      operationId: getStats
+      responses:
+        '200':
+          description: Counts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FraudStatsApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token from `POST /api/v1/auth/login` on the api-gateway.
+  parameters:
+    AlertId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+    Unauthorized:
+      description: Missing, invalid or expired token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+    Forbidden:
+      description: Admin role required (`FORBIDDEN`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+    NotFound:
+      description: Not found (`FRAUD_ALERT_NOT_FOUND`, `NOT_FOUND`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+    Conflict:
+      description: Alert is not OPEN (`CONFLICT`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [message, code, status, timestamp]
+      properties:
+        message:
+          type: string
+        code:
+          type: string
+          example: FRAUD_ALERT_NOT_FOUND
+        status:
+          type: integer
+          example: 404
+        details:
+          type: object
+          additionalProperties:
+            type: string
+        timestamp:
+          type: string
+          format: date-time
+    ApiErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorResponse'
+    PageMetadata:
+      type: object
+      required: [page, size, totalElements, totalPages, last]
+      properties:
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+        last:
+          type: boolean
+    RiskLevel:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, CRITICAL]
+    Decision:
+      type: string
+      enum: [APPROVE, REVIEW, BLOCK]
+    AlertStatus:
+      type: string
+      enum: [OPEN, APPROVED, REJECTED]
+    FraudCheckRequest:
+      type: object
+      required: [amount]
+      properties:
+        transactionId:
+          type: string
+        accountId:
+          type: string
+        amount:
+          type: number
+          example: 250000.00
+        currency:
+          type: string
+          enum: [INR, USD, EUR, GBP]
+        transactionType:
+          type: string
+          enum: [DEPOSIT, WITHDRAWAL, TRANSFER]
+        clientCountry:
+          type: string
+          example: US
+    ReviewFraudAlertRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [APPROVE, REJECT]
+        notes:
+          type: string
+          example: Customer confirmed by phone
+    FraudDecisionResponse:
+      type: object
+      properties:
+        transactionId:
+          type: string
+        riskScore:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 65
+        riskLevel:
+          $ref: '#/components/schemas/RiskLevel'
+        decision:
+          $ref: '#/components/schemas/Decision'
+        triggeredRules:
+          type: array
+          items:
+            type: string
+          example: [AmountThresholdRule, GeographicRule]
+        reason:
+          type: string
+          example: 'Amount above 100000; country US not allowed'
+        evaluatedAt:
+          type: string
+          format: date-time
+    FraudAlertResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        transactionId:
+          type: string
+        accountId:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+        riskScore:
+          type: integer
+        riskLevel:
+          $ref: '#/components/schemas/RiskLevel'
+        triggeredRules:
+          type: array
+          items:
+            type: string
+        status:
+          $ref: '#/components/schemas/AlertStatus'
+        reason:
+          type: string
+        reviewedBy:
+          type: string
+          nullable: true
+          example: ADMIN-1
+        reviewNotes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+    FraudStatsResponse:
+      type: object
+      description: Counts of alerts by status and of decisions by risk level.
+      properties:
+        alertsByStatus:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+          example:
+            OPEN: 2
+            APPROVED: 5
+            REJECTED: 1
+        decisionsByRiskLevel:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+          example:
+            LOW: 120
+            MEDIUM: 14
+            HIGH: 6
+            CRITICAL: 2
+    FraudDecisionApiResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/FraudDecisionResponse'
+    FraudAlertApiResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/FraudAlertResponse'
+    FraudStatsApiResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/FraudStatsResponse'
+    FraudAlertPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          properties:
+            content:
+              type: array
+              items:
+                $ref: '#/components/schemas/FraudAlertResponse'
+    FraudAlertPageApiResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/FraudAlertPage'

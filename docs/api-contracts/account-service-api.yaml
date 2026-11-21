@@ -1,0 +1,595 @@
+openapi: 3.0.3
+info:
+  title: Account Service API
+  version: 1.0.0
+  description: |
+    Manages bank accounts, their status (ACTIVE / FROZEN / CLOSED) and balances.
+    Every response is wrapped in `ApiResponse` (`data` on success, `error` on failure).
+    List endpoints return `ApiResponse<PagedResponse<T>>` and accept `page` (0-based) and `size`
+    (default 20, max 100).
+
+    Customers can only see and change their own accounts. Admin-only operations are marked.
+servers:
+  - url: http://localhost:8080
+    description: Through the API gateway (recommended)
+  - url: http://localhost:8081
+    description: account-service directly (still requires a valid JWT)
+security:
+  - bearerAuth: []
+tags:
+  - name: Accounts
+  - name: Balances
+paths:
+  /api/v1/accounts:
+    post:
+      tags: [Accounts]
+      summary: Open a new account
+      description: |
+        Creates an account with a generated account number (`ACC` + 10 digits).
+        `customerId` is only honoured for admins; for customers it is always the caller's user id.
+        Publishes `ACCOUNT_CREATED`.
+      operationId: createAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAccountRequest'
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags: [Accounts]
+      summary: List accounts
+      description: Customers get their own accounts. Admins get all accounts and may filter by `customerId` and `status`.
+      operationId: listAccounts
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: customerId
+          in: query
+          required: false
+          description: Admin only filter
+          schema:
+            type: string
+            example: CUST-1001
+        - name: status
+          in: query
+          required: false
+          description: Admin only filter
+          schema:
+            $ref: '#/components/schemas/AccountStatus'
+      responses:
+        '200':
+          description: One page of accounts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountSummaryPageApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/accounts/{id}:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [Accounts]
+      summary: Get an account by id
+      operationId: getAccount
+      responses:
+        '200':
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Accounts]
+      summary: Update customer contact details (owner or admin)
+      operationId: updateAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAccountRequest'
+      responses:
+        '200':
+          description: Updated account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/accounts/number/{accountNumber}:
+    get:
+      tags: [Accounts]
+      summary: Get an account by account number
+      operationId: getAccountByNumber
+      parameters:
+        - name: accountNumber
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^ACC[0-9]{10}$'
+            example: ACC4821930576
+      responses:
+        '200':
+          description: The account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/accounts/{id}/freeze:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    post:
+      tags: [Accounts]
+      summary: Freeze an account (admin)
+      description: Sets status to FROZEN, writes a status history row and publishes `ACCOUNT_STATUS_CHANGED`.
+      operationId: freezeAccount
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusChangeRequest'
+      responses:
+        '200':
+          description: Account frozen
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/accounts/{id}/unfreeze:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    post:
+      tags: [Accounts]
+      summary: Unfreeze an account (admin)
+      operationId: unfreezeAccount
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusChangeRequest'
+      responses:
+        '200':
+          description: Account active again
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/accounts/{id}/close:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    post:
+      tags: [Accounts]
+      summary: Close an account (owner or admin)
+      description: The balance must be exactly 0. Closing is final.
+      operationId: closeAccount
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusChangeRequest'
+      responses:
+        '200':
+          description: Account closed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/accounts/{id}/balance:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    get:
+      tags: [Balances]
+      summary: Get the balance of an account
+      operationId: getBalance
+      responses:
+        '200':
+          description: Balance details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountBalanceApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/accounts/{id}/balance/reserve:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    post:
+      tags: [Balances]
+      summary: Put a hold on funds (admin)
+      description: Increases `reservedAmount`; `availableBalance = ledgerBalance - reservedAmount`.
+      operationId: reserveBalance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReserveBalanceRequest'
+      responses:
+        '200':
+          description: Updated balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountBalanceApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/accounts/{id}/balance/release:
+    parameters:
+      - $ref: '#/components/parameters/AccountId'
+    post:
+      tags: [Balances]
+      summary: Release a hold on funds (admin)
+      operationId: releaseBalance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReserveBalanceRequest'
+      responses:
+        '200':
+          description: Updated balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountBalanceApiResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token from `POST /api/v1/auth/login` on the api-gateway.
+  parameters:
+    AccountId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Page number, 0-based
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      required: false
+      description: Page size
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  responses:
+    BadRequest:
+      description: Validation error or bad request (`VALIDATION_ERROR`, `BAD_REQUEST`, `CURRENCY_MISMATCH`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+    Unauthorized:
+      description: Missing, invalid or expired token (`UNAUTHORIZED`, `INVALID_TOKEN`, `TOKEN_EXPIRED`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+    Forbidden:
+      description: Caller is not the owner or not an admin (`FORBIDDEN`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+    NotFound:
+      description: Account not found (`ACCOUNT_NOT_FOUND`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+    Conflict:
+      description: Business rule conflict (`CONFLICT`, `ACCOUNT_FROZEN`, `ACCOUNT_CLOSED`, `INSUFFICIENT_FUNDS`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [message, code, status, timestamp]
+      properties:
+        message:
+          type: string
+          example: Account not found
+        code:
+          type: string
+          description: Name of the `ErrorCode` enum value
+          example: ACCOUNT_NOT_FOUND
+        status:
+          type: integer
+          example: 404
+        details:
+          type: object
+          description: Only for validation errors (field name -> problem)
+          additionalProperties:
+            type: string
+        timestamp:
+          type: string
+          format: date-time
+    ApiErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorResponse'
+    PageMetadata:
+      type: object
+      required: [page, size, totalElements, totalPages, last]
+      properties:
+        page:
+          type: integer
+          example: 0
+        size:
+          type: integer
+          example: 20
+        totalElements:
+          type: integer
+          format: int64
+          example: 2
+        totalPages:
+          type: integer
+          example: 1
+        last:
+          type: boolean
+          example: true
+    AccountType:
+      type: string
+      enum: [SAVINGS, CURRENT, FIXED_DEPOSIT]
+    AccountStatus:
+      type: string
+      enum: [ACTIVE, FROZEN, CLOSED]
+    Currency:
+      type: string
+      enum: [INR, USD, EUR, GBP]
+      default: INR
+    CreateAccountRequest:
+      type: object
+      required: [customerName, customerEmail, accountType]
+      properties:
+        customerName:
+          type: string
+          example: Rahul Sharma
+        customerEmail:
+          type: string
+          format: email
+          example: rahul.sharma@example.com
+        customerPhone:
+          type: string
+          example: '+919876543210'
+        accountType:
+          $ref: '#/components/schemas/AccountType'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        initialDeposit:
+          type: number
+          minimum: 0
+          default: 0
+          example: 5000.00
+        customerId:
+          type: string
+          description: Only honoured for admins. Customers always open accounts for themselves.
+          example: CUST-1001
+    UpdateAccountRequest:
+      type: object
+      properties:
+        customerName:
+          type: string
+        customerEmail:
+          type: string
+          format: email
+        customerPhone:
+          type: string
+    StatusChangeRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          example: Suspicious activity reported by customer
+    ReserveBalanceRequest:
+      type: object
+      required: [amount, transactionId]
+      properties:
+        amount:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          example: 1000.00
+        transactionId:
+          type: string
+          example: 7f1c2a9e-4b7d-4a52-9a41-0c3e5d9b8f10
+    AccountResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        accountNumber:
+          type: string
+          example: ACC4821930576
+        customerId:
+          type: string
+          example: CUST-1001
+        customerName:
+          type: string
+        customerEmail:
+          type: string
+        customerPhone:
+          type: string
+        accountType:
+          $ref: '#/components/schemas/AccountType'
+        status:
+          $ref: '#/components/schemas/AccountStatus'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        balance:
+          type: number
+          example: 5000.00
+        availableBalance:
+          type: number
+          example: 5000.00
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AccountSummaryResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        accountNumber:
+          type: string
+        accountType:
+          $ref: '#/components/schemas/AccountType'
+        status:
+          $ref: '#/components/schemas/AccountStatus'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        balance:
+          type: number
+        customerName:
+          type: string
+    AccountBalanceResponse:
+      type: object
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        accountNumber:
+          type: string
+        ledgerBalance:
+          type: number
+          example: 5000.00
+        availableBalance:
+          type: number
+          example: 4000.00
+        reservedAmount:
+          type: number
+          example: 1000.00
+        currency:
+          $ref: '#/components/schemas/Currency'
+        lastUpdated:
+          type: string
+          format: date-time
+    AccountApiResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AccountResponse'
+    AccountBalanceApiResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AccountBalanceResponse'
+    AccountSummaryPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          properties:
+            content:
+              type: array
+              items:
+                $ref: '#/components/schemas/AccountSummaryResponse'
+    AccountSummaryPageApiResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/AccountSummaryPage'

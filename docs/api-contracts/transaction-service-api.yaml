@@ -1,0 +1,534 @@
+openapi: 3.0.3
+info:
+  title: Transaction Service API
+  version: 1.0.0
+  description: |
+    Starts deposits, withdrawals and transfers and orchestrates the transaction saga
+    (fraud check -> balance update -> completed/failed).
+
+    Money-moving endpoints are **asynchronous**: they return `202 Accepted` with the transaction in
+    status `PENDING`. Poll `GET /api/v1/transactions/{id}/status` to see the final result.
+
+    Send an optional `Idempotency-Key` header: the same key from the same user returns the existing
+    transaction instead of creating a new one.
+
+    Every response is wrapped in `ApiResponse`. List endpoints return `ApiResponse<PagedResponse<T>>`.
+servers:
+  - url: http://localhost:8080
+    description: Through the API gateway (recommended)
+  - url: http://localhost:8082
+    description: transaction-service directly (still requires a valid JWT)
+security:
+  - bearerAuth: []
+tags:
+  - name: Transactions
+  - name: Saga
+paths:
+  /api/v1/transactions/deposit:
+    post:
+      tags: [Transactions]
+      summary: Deposit money into an account
+      operationId: deposit
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ClientCountry'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepositRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/Accepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/transactions/withdraw:
+    post:
+      tags: [Transactions]
+      summary: Withdraw money from an account
+      description: Same body as deposit. The account must be owned by the caller.
+      operationId: withdraw
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ClientCountry'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepositRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/Accepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/transactions/transfer:
+    post:
+      tags: [Transactions]
+      summary: Transfer money between two accounts
+      description: The source account must be owned by the caller. Source and destination must differ.
+      operationId: transfer
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ClientCountry'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/Accepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/transactions:
+    get:
+      tags: [Transactions]
+      summary: List transactions
+      description: |
+        Customers see transactions they initiated (optionally narrowed by `accountId`).
+        Admins see all transactions and may filter by `accountId`, `status` and `type`.
+      operationId: listTransactions
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: accountId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          description: Admin only filter
+          schema:
+            $ref: '#/components/schemas/TransactionStatus'
+        - name: type
+          in: query
+          required: false
+          description: Admin only filter
+          schema:
+            $ref: '#/components/schemas/TransactionType'
+      responses:
+        '200':
+          description: One page of transactions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionPageApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/transactions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/TransactionId'
+    get:
+      tags: [Transactions]
+      summary: Get a transaction by id
+      operationId: getTransaction
+      responses:
+        '200':
+          description: The transaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/transactions/reference/{reference}:
+    get:
+      tags: [Transactions]
+      summary: Get a transaction by reference
+      operationId: getTransactionByReference
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^TXN[0-9]{8}[A-Z0-9]{8}$'
+            example: TXN20261121K7Q2M9XA
+      responses:
+        '200':
+          description: The transaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/transactions/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/TransactionId'
+    get:
+      tags: [Transactions]
+      summary: Get the current status and status history
+      operationId: getTransactionStatus
+      responses:
+        '200':
+          description: Status with history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionStatusApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/transactions/{id}/saga:
+    parameters:
+      - $ref: '#/components/parameters/TransactionId'
+    get:
+      tags: [Saga]
+      summary: Get the saga state of a transaction (admin)
+      operationId: getSagaState
+      responses:
+        '200':
+          description: Saga state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SagaStateApiResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token from `POST /api/v1/auth/login` on the api-gateway.
+  parameters:
+    TransactionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Client-generated unique key (e.g. a UUID). Same key + same user returns the existing transaction.
+      schema:
+        type: string
+        maxLength: 100
+    ClientCountry:
+      name: X-Client-Country
+      in: header
+      required: false
+      description: ISO country code of the client, used by the fraud GeographicRule.
+      schema:
+        type: string
+        example: IN
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  responses:
+    Accepted:
+      description: Transaction accepted and saga started (status PENDING)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TransactionApiResponse'
+    BadRequest:
+      description: Validation error (`VALIDATION_ERROR`, `INVALID_TRANSACTION`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+    Unauthorized:
+      description: Missing, invalid or expired token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+    Forbidden:
+      description: Not the initiator and not an admin (`FORBIDDEN`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+    NotFound:
+      description: Transaction not found (`TRANSACTION_NOT_FOUND`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [message, code, status, timestamp]
+      properties:
+        message:
+          type: string
+        code:
+          type: string
+          example: TRANSACTION_NOT_FOUND
+        status:
+          type: integer
+          example: 404
+        details:
+          type: object
+          additionalProperties:
+            type: string
+        timestamp:
+          type: string
+          format: date-time
+    ApiErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorResponse'
+    PageMetadata:
+      type: object
+      required: [page, size, totalElements, totalPages, last]
+      properties:
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+        last:
+          type: boolean
+    Currency:
+      type: string
+      enum: [INR, USD, EUR, GBP]
+      default: INR
+    TransactionType:
+      type: string
+      enum: [DEPOSIT, WITHDRAWAL, TRANSFER]
+    TransactionStatus:
+      type: string
+      enum: [PENDING, UNDER_REVIEW, PROCESSING, COMPLETED, FAILED]
+    SagaStatus:
+      type: string
+      enum: [AWAITING_FRAUD_CHECK, AWAITING_REVIEW, AWAITING_BALANCE_UPDATE, COMPLETED, FAILED]
+    DepositRequest:
+      type: object
+      description: Used for both deposit and withdraw.
+      required: [accountId, amount]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 10000000
+          example: 2500.00
+        currency:
+          $ref: '#/components/schemas/Currency'
+        description:
+          type: string
+          example: Salary
+    TransferRequest:
+      type: object
+      required: [sourceAccountId, destinationAccountId, amount]
+      properties:
+        sourceAccountId:
+          type: string
+          format: uuid
+        destinationAccountId:
+          type: string
+          format: uuid
+          description: Must be different from sourceAccountId
+        amount:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          maximum: 10000000
+          example: 1500.00
+        currency:
+          $ref: '#/components/schemas/Currency'
+        description:
+          type: string
+          example: Rent share
+    TransactionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        reference:
+          type: string
+          example: TXN20261121K7Q2M9XA
+        transactionType:
+          $ref: '#/components/schemas/TransactionType'
+        status:
+          $ref: '#/components/schemas/TransactionStatus'
+        sourceAccountId:
+          type: string
+          format: uuid
+          nullable: true
+          description: null for DEPOSIT
+        destinationAccountId:
+          type: string
+          format: uuid
+          nullable: true
+          description: null for WITHDRAWAL
+        amount:
+          type: number
+        currency:
+          $ref: '#/components/schemas/Currency'
+        description:
+          type: string
+          nullable: true
+        initiatedBy:
+          type: string
+          example: CUST-1001
+        failureReason:
+          type: string
+          nullable: true
+        failureCode:
+          type: string
+          nullable: true
+          example: INSUFFICIENT_FUNDS
+        riskScore:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 100
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+    StatusHistoryEntry:
+      type: object
+      properties:
+        fromStatus:
+          allOf:
+            - $ref: '#/components/schemas/TransactionStatus'
+          nullable: true
+        toStatus:
+          $ref: '#/components/schemas/TransactionStatus'
+        reason:
+          type: string
+          nullable: true
+        changedAt:
+          type: string
+          format: date-time
+    TransactionStatusResponse:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        reference:
+          type: string
+        status:
+          $ref: '#/components/schemas/TransactionStatus'
+        failureReason:
+          type: string
+          nullable: true
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatusHistoryEntry'
+    SagaStateResponse:
+      type: object
+      properties:
+        sagaId:
+          type: string
+          format: uuid
+        transactionId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/SagaStatus'
+        currentStep:
+          type: string
+          example: BALANCE_UPDATE
+        retryCount:
+          type: integer
+        failureReason:
+          type: string
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+    TransactionApiResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/TransactionResponse'
+    TransactionStatusApiResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/TransactionStatusResponse'
+    SagaStateApiResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/SagaStateResponse'
+    TransactionPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          properties:
+            content:
+              type: array
+              items:
+                $ref: '#/components/schemas/TransactionResponse'
+    TransactionPageApiResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/TransactionPage'
