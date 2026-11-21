@@ -1,0 +1,113 @@
+server:
+  port: ${SERVER_PORT:8083}
+
+spring:
+  application:
+    name: fraud-service
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:fraud_db}
+    username: ${DB_USERNAME:banking}
+    password: ${DB_PASSWORD:banking}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: fraud-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+    listener:
+      ack-mode: record
+
+jwt:
+  secret: ${JWT_SECRET:change-me-dev-secret-key-at-least-32-bytes-long}
+  expiry: ${JWT_EXPIRY:PT1H}
+
+eureka:
+  client:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    redis:
+      enabled: false
+  tracing:
+    enabled: ${TRACING_ENABLED:false}
+
+# Fraud rule thresholds and scores (bound to FraudRulesConfig)
+fraud:
+  rules:
+    amount-threshold:
+      enabled: true
+      high-amount: 100000
+      high-score: 40
+      very-high-amount: 500000
+      very-high-score: 70
+    velocity:
+      enabled: true
+      max-transactions: 5
+      window-minutes: 10
+      score: 30
+    geographic:
+      enabled: true
+      allowed-countries:
+        - IN
+      score: 25
+    pattern-anomaly:
+      enabled: true
+      multiplier: 5
+      history-size: 20
+      min-history: 3
+      amount-anomaly-score: 20
+      night-start-hour: 0
+      night-end-hour: 5
+      night-score: 10
+      time-zone: Asia/Kolkata
+    risk-levels:
+      medium: 30
+      high: 60
+      critical: 80
+      max-score: 100
+
+logging:
+  level:
+    com.banking: INFO
