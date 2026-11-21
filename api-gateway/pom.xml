@@ -12,55 +12,63 @@
 
     <artifactId>api-gateway</artifactId>
     <name>api-gateway</name>
-    <description>Spring Cloud Gateway — JWT validation, routing, and rate limiting</description>
+    <description>Spring Cloud Gateway — login, JWT validation, routing and circuit breaking</description>
 
     <dependencies>
         <dependency>
             <groupId>com.banking</groupId>
             <artifactId>common-library</artifactId>
             <exclusions>
-                <!-- Gateway is reactive; exclude servlet-based web -->
+                <!-- The gateway is reactive (WebFlux + Netty). The servlet stack that
+                     common-library brings in would break Spring Cloud Gateway. -->
                 <exclusion>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-starter-web</artifactId>
                 </exclusion>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-tomcat</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
 
+        <!-- Spring Cloud Gateway (brings spring-boot-starter-webflux) -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-gateway</artifactId>
         </dependency>
 
-        <!-- Reactive security for the gateway -->
+        <!-- Reactive security (only used to turn off the defaults; JWT is checked by our own filter) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
 
-        <!-- Service Discovery -->
+        <!-- Service Discovery (disabled by config: there is no Eureka server) -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
         </dependency>
 
-        <!-- Rate limiting via Redis -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
-        </dependency>
-
-        <!-- Resilience -->
+        <!-- Resilience: circuit breaker per route -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-circuitbreaker-reactor-resilience4j</artifactId>
         </dependency>
 
-        <!-- JWT -->
+        <!-- JWT (impl + jackson are needed at runtime by JwtUtil from common-library) -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-api</artifactId>

@@ -1,0 +1,11 @@
+# Dev profile: more logging so you can see what the gateway does with each request.
+logging:
+  level:
+    com.banking: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+    reactor.netty.http.client: INFO
+
+management:
+  endpoint:
+    health:
+      show-details: always

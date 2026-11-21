@@ -1,0 +1,92 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: api-gateway
+  main:
+    # The gateway runs on WebFlux/Netty, never on the servlet stack.
+    web-application-type: reactive
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+# There is no Eureka server: downstream URLs come from the gateway.services list below.
+eureka:
+  client:
+    enabled: false
+
+jwt:
+  secret: ${JWT_SECRET:change-me-dev-secret-key-at-least-32-bytes-long}
+  expiry: ${JWT_EXPIRY:PT1H}
+
+gateway:
+  cors:
+    # Comma separated list, e.g. "http://localhost:5173,https://bank.example.com"
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  circuit-breaker:
+    # How long a downstream call may take before it counts as a failure.
+    timeout: ${CIRCUIT_BREAKER_TIMEOUT:10s}
+  # One entry per downstream service: used for routing, circuit breakers and /api/v1/system/health.
+  services:
+    - name: account-service
+      path: /api/v1/accounts/**
+      uri: ${ACCOUNT_SERVICE_URL:http://localhost:8081}
+    - name: transaction-service
+      path: /api/v1/transactions/**
+      uri: ${TRANSACTION_SERVICE_URL:http://localhost:8082}
+    - name: fraud-service
+      path: /api/v1/fraud/**
+      uri: ${FRAUD_SERVICE_URL:http://localhost:8083}
+    - name: notification-service
+      path: /api/v1/notifications/**
+      uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8084}
+    - name: audit-service
+      path: /api/v1/audit/**
+      uri: ${AUDIT_SERVICE_URL:http://localhost:8085}
+  auth:
+    # DEMO USERS ONLY. Passwords are BCrypt hashes ("{bcrypt}..."):
+    #   rahul / password, priya / password, admin / admin123
+    # A plain-text password can be used for quick experiments with the "{noop}" prefix.
+    users:
+      - username: rahul
+        password: "{bcrypt}$2a$10$AQc3555zQghRwv.3jE96suc/DOgAKBzfrAVzp9A6Z8GDIBRCkp31C"
+        user-id: CUST-1001
+        name: Rahul Sharma
+        email: rahul.sharma@example.com
+        roles: [ROLE_CUSTOMER]
+      - username: priya
+        password: "{bcrypt}$2a$10$AQc3555zQghRwv.3jE96suc/DOgAKBzfrAVzp9A6Z8GDIBRCkp31C"
+        user-id: CUST-1002
+        name: Priya Patel
+        email: priya.patel@example.com
+        roles: [ROLE_CUSTOMER]
+      - username: admin
+        password: "{bcrypt}$2a$10$/H/TxxGALHGPqjOCvTeG3uc1kO3GDxu2tX2OkuxtahEh.fBtMhJn."
+        user-id: ADMIN-1
+        name: Devon Ellis
+        email: admin@meridian.bank
+        roles: [ROLE_ADMIN, ROLE_CUSTOMER]
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  health:
+    redis:
+      enabled: false
+  tracing:
+    enabled: ${TRACING_ENABLED:false}
+
+info:
+  app:
+    name: api-gateway
+    description: Entry point of the banking platform
+
+logging:
+  level:
+    com.banking: INFO
