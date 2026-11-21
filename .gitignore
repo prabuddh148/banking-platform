@@ -42,3 +42,6 @@ application-staging.yml
 # Docker volumes (runtime data)
 docker/volumes/
 docker/data/
+
+# Production secrets for docker-compose.prod.yml
+docker/.env.prod

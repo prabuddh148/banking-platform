@@ -1,0 +1,323 @@
+# =============================================================================
+# Banking platform - SMALL PRODUCTION-STYLE STACK for ONE server (e.g. AWS EC2)
+#
+# Differences from docker-compose.yml (local full stack):
+#   - Kafka runs in KRaft mode (no ZooKeeper)          -> saves ~300 MB RAM
+#   - No Prometheus, Grafana, OTel collector, Kafka UI  -> saves ~1 GB RAM
+#   - Small JVM settings for every service (SerialGC, ~260 MB heap)
+#   - Only port 80 is published (nginx). nginx serves the React app and
+#     forwards /api/* to the gateway. Postgres, Kafka, the services and
+#     MailHog are NOT reachable from the internet.
+#   - Secrets come from docker/.env.prod (created by setup-ec2.sh).
+#
+# Needs about 3.5 GB RAM: use a 4 GB machine (t3.medium) + 2 GB swap.
+#
+#   cd docker
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# See docs/deployment/aws-ec2.md for the full guide.
+# =============================================================================
+name: banking-prod
+
+x-java-env: &java-env
+  TZ: UTC
+  # Small, predictable memory: heap = 60% of the container limit, SerialGC
+  # (lowest overhead for small heaps), smaller thread stacks / code cache.
+  JAVA_TOOL_OPTIONS: >-
+    -XX:MaxRAMPercentage=60 -XX:+UseSerialGC -Xss512k
+    -XX:ReservedCodeCacheSize=64m -XX:MaxMetaspaceSize=160m
+    -XX:+ExitOnOutOfMemoryError
+  JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env.prod}
+  JWT_EXPIRY: ${JWT_EXPIRY:-PT1H}
+  TRACING_ENABLED: "false"
+
+x-service-env: &service-env
+  <<: *java-env
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_USERNAME: ${POSTGRES_USER:-banking}
+  DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
+  DB_POOL_SIZE: "5"
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [banking-net]
+  depends_on: &service-deps
+    postgres:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+    kafka-init:
+      condition: service_completed_successfully
+    redis:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fsS http://localhost:$${SERVER_PORT}/actuator/health || exit 1"]
+    interval: 20s
+    timeout: 5s
+    retries: 10
+    start_period: 180s     # small machine: JVM startup is slow
+  deploy:
+    resources:
+      limits:
+        memory: 448m
+  logging: *default-logging
+
+services:
+  # ===========================================================================
+  # Infrastructure
+  # ===========================================================================
+  postgres:
+    build:
+      context: ./postgresql
+    image: banking/postgres:prod
+    container_name: banking-postgres
+    env_file: ./postgresql/postgres.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-banking}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
+    # Smaller memory settings than the Postgres defaults
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=60", "-c", "work_mem=4MB"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    restart: unless-stopped
+    networks: [banking-net]
+    logging: *default-logging
+
+  # Single-node Kafka in KRaft mode (broker + controller in one process).
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: banking-kafka
+    hostname: kafka
+    environment:
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"   # any base64url of 16 bytes, fixed so restarts keep data
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29094
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:29094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx384m"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:29092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 640m
+    restart: unless-stopped
+    networks: [banking-net]
+    logging: *default-logging
+
+  # One-shot job: creates all topics (+ .DLT), then exits.
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: banking-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["bash", "/scripts/create-topics.sh"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    volumes:
+      - ../infrastructure/kafka/topics:/scripts:ro
+    restart: "no"
+    networks: [banking-net]
+
+  redis:
+    image: redis:7.2.5-alpine
+    container_name: banking-redis
+    command: ["redis-server", "--maxmemory", "48mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+    restart: unless-stopped
+    networks: [banking-net]
+    logging: *default-logging
+
+  # Catches every email the platform sends. Its web UI is only bound to the
+  # server's localhost: open it through an SSH tunnel (see the guide).
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: banking-mailhog
+    ports:
+      - "127.0.0.1:8025:8025"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null 'http://localhost:8025/api/v2/messages?limit=1' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+    restart: unless-stopped
+    networks: [banking-net]
+    logging: *default-logging
+
+  # ===========================================================================
+  # Banking services (no published ports - only reachable inside banking-net)
+  # ===========================================================================
+  account-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: account-service/Dockerfile
+    image: banking/account-service:prod
+    container_name: banking-account-service
+    environment:
+      <<: *service-env
+      DB_NAME: accounts_db
+
+  transaction-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: transaction-service/Dockerfile
+    image: banking/transaction-service:prod
+    container_name: banking-transaction-service
+    environment:
+      <<: *service-env
+      DB_NAME: transactions_db
+      SAGA_TIMEOUT_MINUTES: "15"
+
+  fraud-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: fraud-service/Dockerfile
+    image: banking/fraud-service:prod
+    container_name: banking-fraud-service
+    environment:
+      <<: *service-env
+      DB_NAME: fraud_db
+
+  notification-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: notification-service/Dockerfile
+    image: banking/notification-service:prod
+    container_name: banking-notification-service
+    depends_on:
+      <<: *service-deps
+      mailhog:
+        condition: service_healthy
+    environment:
+      <<: *service-env
+      DB_NAME: notifications_db
+      MAIL_HOST: mailhog
+      MAIL_PORT: "1025"
+
+  audit-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: audit-service/Dockerfile
+    image: banking/audit-service:prod
+    container_name: banking-audit-service
+    environment:
+      <<: *service-env
+      DB_NAME: audit_db
+
+  api-gateway:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: api-gateway/Dockerfile
+    image: banking/api-gateway:prod
+    container_name: banking-api-gateway
+    depends_on:
+      account-service:
+        condition: service_started
+      transaction-service:
+        condition: service_started
+      fraud-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+      audit-service:
+        condition: service_started
+    environment:
+      <<: *java-env
+      # The browser talks to nginx on the same origin, so CORS is only a fallback.
+      CORS_ALLOWED_ORIGINS: ${PUBLIC_URL:-http://localhost}
+      ACCOUNT_SERVICE_URL: http://account-service:8081
+      TRANSACTION_SERVICE_URL: http://transaction-service:8082
+      FRAUD_SERVICE_URL: http://fraud-service:8083
+      NOTIFICATION_SERVICE_URL: http://notification-service:8084
+      AUDIT_SERVICE_URL: http://audit-service:8085
+
+  # ===========================================================================
+  # Public entry point: React app + reverse proxy for /api
+  # ===========================================================================
+  web:
+    build:
+      context: ../frontend
+    image: banking/web:prod
+    container_name: banking-web
+    depends_on:
+      api-gateway:
+        condition: service_started
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+    restart: unless-stopped
+    networks: [banking-net]
+    logging: *default-logging
+
+networks:
+  banking-net:
+    name: banking-prod-net
+    driver: bridge
+
+volumes:
+  postgres-data:
+  kafka-data:
