@@ -43,9 +43,18 @@ jobs:
           VITE_BASE: /${{ github.event.repository.name }}/
         run: npm run build
 
-      # GitHub Pages has no server-side routing: serve index.html for unknown
-      # paths (e.g. /banking-platform/admin/fraud) so React Router can handle them.
-      - run: cp dist/index.html dist/404.html
+      # GitHub Pages has no server-side routing. Give every app route its own
+      # index.html so shared links (e.g. /banking-platform/login) return HTTP 200,
+      # and keep 404.html as the fallback for anything else.
+      - name: Add static entry points for app routes
+        run: |
+          cp dist/index.html dist/404.html
+          for route in login architecture accounts transfer transactions notifications \
+                       admin admin/accounts admin/transactions admin/fraud admin/events \
+                       admin/audit admin/services; do
+            mkdir -p "dist/$route"
+            cp dist/index.html "dist/$route/index.html"
+          done
 
       - uses: actions/configure-pages@v5
 
