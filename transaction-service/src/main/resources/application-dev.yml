@@ -1,0 +1,23 @@
+# Local development tweaks: activate with SPRING_PROFILES_ACTIVE=dev
+spring:
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+# Shorter timeout so stuck sagas are easy to observe locally
+saga:
+  timeout-minutes: ${SAGA_TIMEOUT_MINUTES:5}
+  timeout-check-interval-ms: ${SAGA_TIMEOUT_CHECK_INTERVAL_MS:30000}
+
+management:
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.banking: DEBUG
+    org.springframework.kafka: INFO
+    org.hibernate.SQL: DEBUG

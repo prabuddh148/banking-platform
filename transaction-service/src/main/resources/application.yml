@@ -1,0 +1,93 @@
+server:
+  port: ${SERVER_PORT:8082}
+
+spring:
+  application:
+    name: transaction-service
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:transactions_db}
+    username: ${DB_USERNAME:banking}
+    password: ${DB_PASSWORD:banking}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: transaction-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+    listener:
+      ack-mode: record
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+jwt:
+  secret: ${JWT_SECRET:change-me-dev-secret-key-at-least-32-bytes-long}
+  expiry: ${JWT_EXPIRY:PT1H}
+
+# Transactional outbox relay (see OutboxEventRelay)
+outbox:
+  relay:
+    interval-ms: ${OUTBOX_RELAY_INTERVAL_MS:2000}
+
+# Saga timeout job (see TransactionSagaOrchestrator#timeOutStuckSagas)
+saga:
+  timeout-minutes: ${SAGA_TIMEOUT_MINUTES:15}
+  timeout-check-interval-ms: ${SAGA_TIMEOUT_CHECK_INTERVAL_MS:60000}
+
+# There is no Eureka server in this setup; the dependency stays for later.
+eureka:
+  client:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  health:
+    redis:
+      enabled: false
+  tracing:
+    enabled: ${TRACING_ENABLED:false}
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    com.banking: INFO
