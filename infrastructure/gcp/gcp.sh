@@ -24,6 +24,18 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Windows + Git Bash: find a winget/installer-installed SDK that isn't on PATH yet, and use the
+# Python bundled with it (the bash "gcloud" wrapper can't see the Windows Store python alias).
+if [ -n "${LOCALAPPDATA:-}" ]; then
+  _sdk="$(cygpath -u "${LOCALAPPDATA}" 2>/dev/null || echo "${LOCALAPPDATA}")/Google/Cloud SDK/google-cloud-sdk"
+  if [ -d "${_sdk}/bin" ]; then
+    command -v gcloud >/dev/null 2>&1 || export PATH="${_sdk}/bin:${PATH}"
+    [ -z "${CLOUDSDK_PYTHON:-}" ] && [ -f "${_sdk}/platform/bundledpython/python.exe" ] \
+      && export CLOUDSDK_PYTHON="${_sdk}/platform/bundledpython/python.exe"
+  fi
+fi
+
 PROJECT="${GCP_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}"
 ZONE="${GCP_ZONE:-asia-south1-a}"
 MACHINE="${GCP_MACHINE:-e2-medium}"
