@@ -247,7 +247,10 @@ git clone https://github.com/prabuddh148/banking-platform.git && cd banking-plat
 bash infrastructure/aws/setup-ec2.sh     # installs Docker, adds swap, creates secrets, builds, starts
 ```
 
-Step-by-step guide (account, budget alert, instance, security group, costs, cleanup):
+Google Cloud instead? `bash infrastructure/gcp/gcp.sh up` from your PC creates the VM and installs
+everything: [docs/deployment/gcp.md](docs/deployment/gcp.md).
+
+AWS step-by-step guide (account, budget alert, instance, security group, costs, cleanup):
 [docs/deployment/aws-ec2.md](docs/deployment/aws-ec2.md).
 
 ### Frontend
@@ -1490,7 +1493,7 @@ Runbooks for production-style incidents: [`docs/runbooks/`](docs/runbooks/).
 | APIs | [OpenAPI specs](docs/api-contracts/) · [Versioning policy](docs/api-contracts/api-versioning-policy.md) |
 | Events | [Event catalog](docs/events/event-catalog.md) · [Topic design](docs/events/topic-design.md) · [DLT management](docs/events/dlq-management.md) · [Schema evolution](docs/events/schema-evolution-policy.md) |
 | Database | [Schema overview](docs/database/schema-overview.md) · [Indexing](docs/database/indexing-strategy.md) · [Migrations](docs/database/migration-strategy.md) · [Retention](docs/database/data-retention-policy.md) |
-| Deployment | [Local setup](docs/deployment/local-setup.md) · [AWS EC2](docs/deployment/aws-ec2.md) · [Environment config](docs/deployment/environment-config.md) · [CI/CD](docs/deployment/ci-cd-pipeline.md) · [Rollout](docs/deployment/rollout-strategy.md) |
+| Deployment | [Local setup](docs/deployment/local-setup.md) · [AWS EC2](docs/deployment/aws-ec2.md) · [Google Cloud](docs/deployment/gcp.md) · [Environment config](docs/deployment/environment-config.md) · [CI/CD](docs/deployment/ci-cd-pipeline.md) · [Rollout](docs/deployment/rollout-strategy.md) |
 | Operations | [Incident response](docs/runbooks/incident-response.md) · [Stuck saga](docs/runbooks/saga-stuck-recovery.md) · [Outbox backlog](docs/runbooks/outbox-backlog-recovery.md) · [Consumer lag](docs/runbooks/kafka-consumer-lag.md) · [DLT reprocessing](docs/runbooks/dlq-reprocessing.md) · [DB failover](docs/runbooks/database-failover.md) |
 | Security | [Security model](docs/security/security-model.md) · [Threat model](docs/security/threat-model.md) · [Secrets](docs/security/secret-management.md) · [Compliance notes](docs/security/compliance-notes.md) |
 | Learning material | [`docs/project-recap-video.html`](docs/project-recap-video.html) · [`docs/common-library-explained.pdf`](docs/common-library-explained.pdf) |
