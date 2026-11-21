@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://banking.local/schemas/events/fraud-decision.json",
+  "title": "FraudDecisionEvent (FRAUD_CLEARED / FRAUD_DETECTED)",
+  "description": "Published by fraud-service on topic banking.fraud.events after screening a TRANSACTION_INITIATED event, or after an admin reviews a fraud alert. Kafka key = transactionId. FRAUD_CLEARED always has decision APPROVE; FRAUD_DETECTED has REVIEW (transaction waits for a human) or BLOCK (transaction fails). Consumed by transaction-service (saga) and audit-service.",
+  "type": "object",
+  "definitions": {
+    "baseEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": { "type": "string", "minLength": 1, "description": "Unique id of this event (UUID); used for consumer idempotency." },
+        "eventType": { "type": "string", "description": "Event type name (com.banking.common.event.EventType)." },
+        "aggregateId": { "type": "string", "minLength": 1, "description": "Id of the entity the event is about; also the Kafka message key." },
+        "occurredAt": { "type": "string", "format": "date-time", "description": "When the event happened (ISO-8601 instant, UTC)." },
+        "correlationId": { "type": ["string", "null"], "description": "Trace / correlation id propagated from the original request (X-Trace-Id)." },
+        "source": { "type": "string", "description": "Name of the producing service." },
+        "schemaVersion": { "type": "integer", "minimum": 1, "description": "Payload schema version (BaseEvent.CURRENT_SCHEMA_VERSION)." }
+      },
+      "required": ["eventId", "eventType", "aggregateId", "occurredAt", "source", "schemaVersion"]
+    }
+  },
+  "allOf": [
+    { "$ref": "#/definitions/baseEvent" },
+    {
+      "properties": {
+        "eventType": { "enum": ["FRAUD_CLEARED", "FRAUD_DETECTED"] },
+        "source": { "const": "fraud-service" },
+        "transactionId": { "type": "string", "minLength": 1, "description": "Screened transaction. Equal to aggregateId." },
+        "riskScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "riskLevel": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"], "description": "<30 LOW, <60 MEDIUM, <80 HIGH, else CRITICAL." },
+        "decision": { "type": "string", "enum": ["APPROVE", "REVIEW", "BLOCK"] },
+        "triggeredRules": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "description": "Names of the rules that added to the score, e.g. AmountThresholdRule, VelocityRule, GeographicRule, PatternAnomalyRule."
+        },
+        "reason": { "type": ["string", "null"], "description": "Human-readable explanation." },
+        "alertId": { "type": ["string", "null"], "description": "Fraud alert id when REVIEW/BLOCK created an alert." },
+        "reviewedBy": { "type": ["string", "null"], "description": "Admin user id when the decision came from a manual review." }
+      },
+      "required": ["transactionId", "riskScore", "riskLevel", "decision", "triggeredRules"]
+    },
+    {
+      "description": "FRAUD_CLEARED <=> APPROVE; FRAUD_DETECTED <=> REVIEW or BLOCK.",
+      "oneOf": [
+        {
+          "properties": {
+            "eventType": { "const": "FRAUD_CLEARED" },
+            "decision": { "const": "APPROVE" }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "FRAUD_DETECTED" },
+            "decision": { "enum": ["REVIEW", "BLOCK"] }
+          }
+        }
+      ]
+    }
+  ],
+  "examples": [
+    {
+      "eventId": "c56a4180-65aa-42ec-a945-5fd21dec0538",
+      "eventType": "FRAUD_DETECTED",
+      "aggregateId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "occurredAt": "2026-11-21T10:20:01.250Z",
+      "correlationId": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "source": "fraud-service",
+      "schemaVersion": 1,
+      "transactionId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "riskScore": 65,
+      "riskLevel": "HIGH",
+      "decision": "REVIEW",
+      "triggeredRules": ["AmountThresholdRule", "GeographicRule"],
+      "reason": "Amount above 100000; client country US not in allowed list",
+      "alertId": "a1b2c3d4-e5f6-4711-8899-aabbccddeeff",
+      "reviewedBy": null
+    },
+    {
+      "eventId": "d9428888-122b-11e1-b85c-61cd3cbb3210",
+      "eventType": "FRAUD_CLEARED",
+      "aggregateId": "16fd2706-8baf-433b-82eb-8c7fada847da",
+      "occurredAt": "2026-11-21T10:21:00.000Z",
+      "correlationId": null,
+      "source": "fraud-service",
+      "schemaVersion": 1,
+      "transactionId": "16fd2706-8baf-433b-82eb-8c7fada847da",
+      "riskScore": 0,
+      "riskLevel": "LOW",
+      "decision": "APPROVE",
+      "triggeredRules": [],
+      "reason": "No rules triggered",
+      "alertId": null,
+      "reviewedBy": null
+    }
+  ]
+}

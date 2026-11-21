@@ -1,0 +1,16 @@
+# Grafana dashboard provisioning: load every *.json in this folder into the
+# "Banking Platform" folder. Changes made in the UI are not saved back to disk -
+# export the JSON and replace the file instead.
+apiVersion: 1
+
+providers:
+  - name: banking-dashboards
+    orgId: 1
+    folder: Banking Platform
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

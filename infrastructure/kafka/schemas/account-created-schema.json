@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://banking.local/schemas/events/account-created.json",
+  "title": "AccountCreatedEvent",
+  "description": "Published by account-service on topic banking.account.events when a new account is opened. Kafka key = accountId. Consumed by notification-service (welcome email) and audit-service.",
+  "type": "object",
+  "definitions": {
+    "baseEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": { "type": "string", "minLength": 1, "description": "Unique id of this event (UUID); used for consumer idempotency." },
+        "eventType": { "type": "string", "description": "Event type name (com.banking.common.event.EventType)." },
+        "aggregateId": { "type": "string", "minLength": 1, "description": "Id of the entity the event is about; also the Kafka message key." },
+        "occurredAt": { "type": "string", "format": "date-time", "description": "When the event happened (ISO-8601 instant, UTC)." },
+        "correlationId": { "type": ["string", "null"], "description": "Trace / correlation id propagated from the original request (X-Trace-Id)." },
+        "source": { "type": "string", "description": "Name of the producing service." },
+        "schemaVersion": { "type": "integer", "minimum": 1, "description": "Payload schema version (BaseEvent.CURRENT_SCHEMA_VERSION)." }
+      },
+      "required": ["eventId", "eventType", "aggregateId", "occurredAt", "source", "schemaVersion"]
+    }
+  },
+  "allOf": [
+    { "$ref": "#/definitions/baseEvent" },
+    {
+      "properties": {
+        "eventType": { "const": "ACCOUNT_CREATED" },
+        "source": { "const": "account-service" },
+        "accountId": { "type": "string", "minLength": 1, "description": "Account id (UUID). Equal to aggregateId." },
+        "accountNumber": { "type": "string", "pattern": "^ACC[0-9]{10}$", "description": "Human-facing account number." },
+        "customerId": { "type": "string", "minLength": 1, "description": "Owner's user id, e.g. CUST-1001." },
+        "customerName": { "type": "string", "minLength": 1 },
+        "customerEmail": { "type": "string", "format": "email" },
+        "customerPhone": { "type": ["string", "null"] },
+        "accountType": { "type": "string", "enum": ["SAVINGS", "CURRENT", "FIXED_DEPOSIT"] },
+        "currency": { "type": "string", "enum": ["INR", "USD", "EUR", "GBP"] },
+        "initialBalance": { "type": "number", "minimum": 0, "description": "Opening balance (BigDecimal, scale 2)." }
+      },
+      "required": ["accountId", "accountNumber", "customerId", "customerName", "customerEmail", "accountType", "currency", "initialBalance"]
+    }
+  ],
+  "examples": [
+    {
+      "eventId": "0f8fad5b-d9cb-469f-a165-70867728950e",
+      "eventType": "ACCOUNT_CREATED",
+      "aggregateId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "occurredAt": "2026-11-21T10:15:30.123Z",
+      "correlationId": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "source": "account-service",
+      "schemaVersion": 1,
+      "accountId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "accountNumber": "ACC1234567890",
+      "customerId": "CUST-1001",
+      "customerName": "Rahul Sharma",
+      "customerEmail": "rahul.sharma@example.com",
+      "customerPhone": "+919800000001",
+      "accountType": "SAVINGS",
+      "currency": "INR",
+      "initialBalance": 25000.00
+    }
+  ]
+}

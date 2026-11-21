@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://banking.local/schemas/events/transaction-initiated.json",
+  "title": "TransactionInitiatedEvent",
+  "description": "Published by transaction-service on topic banking.transaction.events when a deposit, withdrawal or transfer is accepted (saga step 1). Kafka key = transactionId. Consumed by fraud-service (screening) and audit-service.",
+  "type": "object",
+  "definitions": {
+    "baseEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": { "type": "string", "minLength": 1, "description": "Unique id of this event (UUID); used for consumer idempotency." },
+        "eventType": { "type": "string", "description": "Event type name (com.banking.common.event.EventType)." },
+        "aggregateId": { "type": "string", "minLength": 1, "description": "Id of the entity the event is about; also the Kafka message key." },
+        "occurredAt": { "type": "string", "format": "date-time", "description": "When the event happened (ISO-8601 instant, UTC)." },
+        "correlationId": { "type": ["string", "null"], "description": "Trace / correlation id propagated from the original request (X-Trace-Id)." },
+        "source": { "type": "string", "description": "Name of the producing service." },
+        "schemaVersion": { "type": "integer", "minimum": 1, "description": "Payload schema version (BaseEvent.CURRENT_SCHEMA_VERSION)." }
+      },
+      "required": ["eventId", "eventType", "aggregateId", "occurredAt", "source", "schemaVersion"]
+    }
+  },
+  "allOf": [
+    { "$ref": "#/definitions/baseEvent" },
+    {
+      "properties": {
+        "eventType": { "const": "TRANSACTION_INITIATED" },
+        "source": { "const": "transaction-service" },
+        "transactionId": { "type": "string", "minLength": 1, "description": "Transaction id (UUID). Equal to aggregateId." },
+        "reference": { "type": "string", "pattern": "^TXN[0-9]{8}[A-Z0-9]{8}$", "description": "TXN + yyyyMMdd + 8 random uppercase alphanumerics." },
+        "transactionType": { "type": "string", "enum": ["DEPOSIT", "WITHDRAWAL", "TRANSFER"] },
+        "sourceAccountId": { "type": ["string", "null"], "description": "Debited account; null for DEPOSIT." },
+        "destinationAccountId": { "type": ["string", "null"], "description": "Credited account; null for WITHDRAWAL." },
+        "amount": { "type": "number", "exclusiveMinimum": 0, "maximum": 10000000, "description": "Amount (BigDecimal, scale 2)." },
+        "currency": { "type": "string", "enum": ["INR", "USD", "EUR", "GBP"] },
+        "initiatedBy": { "type": "string", "minLength": 1, "description": "User id of the requester, e.g. CUST-1001." },
+        "description": { "type": ["string", "null"] },
+        "clientCountry": { "type": ["string", "null"], "description": "ISO country code from the X-Client-Country header, if present." }
+      },
+      "required": ["transactionId", "reference", "transactionType", "amount", "currency", "initiatedBy"]
+    },
+    {
+      "description": "Account ids must match the transaction type.",
+      "oneOf": [
+        {
+          "properties": {
+            "transactionType": { "const": "DEPOSIT" },
+            "sourceAccountId": { "type": "null" },
+            "destinationAccountId": { "type": "string", "minLength": 1 }
+          },
+          "required": ["destinationAccountId"]
+        },
+        {
+          "properties": {
+            "transactionType": { "const": "WITHDRAWAL" },
+            "sourceAccountId": { "type": "string", "minLength": 1 },
+            "destinationAccountId": { "type": "null" }
+          },
+          "required": ["sourceAccountId"]
+        },
+        {
+          "properties": {
+            "transactionType": { "const": "TRANSFER" },
+            "sourceAccountId": { "type": "string", "minLength": 1 },
+            "destinationAccountId": { "type": "string", "minLength": 1 }
+          },
+          "required": ["sourceAccountId", "destinationAccountId"]
+        }
+      ]
+    }
+  ],
+  "examples": [
+    {
+      "eventId": "9b2f1d7e-3c4a-4e8b-9f6d-2a1b3c4d5e6f",
+      "eventType": "TRANSACTION_INITIATED",
+      "aggregateId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "occurredAt": "2026-11-21T10:20:00.000Z",
+      "correlationId": "4bf92f3577b34da6a3ce929d0e0e4736",
+      "source": "transaction-service",
+      "schemaVersion": 1,
+      "transactionId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "reference": "TXN20261121K7Q2M9XA",
+      "transactionType": "TRANSFER",
+      "sourceAccountId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "destinationAccountId": "16fd2706-8baf-433b-82eb-8c7fada847da",
+      "amount": 1500.00,
+      "currency": "INR",
+      "initiatedBy": "CUST-1001",
+      "description": "Rent share",
+      "clientCountry": "IN"
+    }
+  ]
+}

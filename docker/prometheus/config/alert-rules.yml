@@ -1,0 +1,181 @@
+# Prometheus alert rules for the banking platform.
+# View them at http://localhost:9090/alerts. (No Alertmanager is wired up in the
+# local stack - alerts are visible in Prometheus/Grafana but not sent anywhere.)
+#
+# Metric sources (Spring Boot Actuator + Micrometer):
+#   up                                          - scrape success (1 = up)
+#   http_server_requests_seconds_*              - HTTP server timings
+#   jvm_* / process_* / hikaricp_*              - JVM, process and DB pool
+#   kafka_consumer_fetch_manager_records_lag_max- Kafka consumer lag (client metrics)
+#   spring_kafka_listener_seconds_*             - @KafkaListener timings/outcomes
+#   outbox_events_pending                       - custom gauge (account/transaction outbox)
+
+groups:
+  # ---------------------------------------------------------------------------
+  - name: service-availability
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"api-gateway|account-service|transaction-service|fraud-service|notification-service|audit-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} is down"
+          description: "Prometheus could not scrape {{ $labels.job }} ({{ $labels.instance }}) for more than 1 minute."
+          runbook: docs/runbooks/incident-response.md
+
+      - alert: ServiceRestarted
+        expr: process_uptime_seconds{job=~".*-service|api-gateway"} < 120
+        for: 0m
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.job }} restarted recently"
+          description: "{{ $labels.job }} has been up for only {{ $value | humanizeDuration }}."
+
+  # ---------------------------------------------------------------------------
+  - name: http-errors-and-latency
+    rules:
+      - alert: HighHttp5xxRate
+        expr: |
+          (
+            sum by (job) (rate(http_server_requests_seconds_count{status=~"5..", uri!~"/actuator.*"}[5m]))
+            /
+            sum by (job) (rate(http_server_requests_seconds_count{uri!~"/actuator.*"}[5m]))
+          ) > 0.05
+          and
+          sum by (job) (rate(http_server_requests_seconds_count{uri!~"/actuator.*"}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate on {{ $labels.job }}"
+          description: "{{ $value | humanizePercentage }} of requests to {{ $labels.job }} failed with 5xx over the last 5 minutes (threshold 5%)."
+          runbook: docs/runbooks/incident-response.md
+
+      - alert: GatewayServiceUnavailable
+        expr: sum by (job) (rate(http_server_requests_seconds_count{job="api-gateway", status="503"}[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API gateway is returning 503 (circuit breaker fallbacks)"
+          description: "The gateway is serving {{ $value | humanize }} 503 responses per second - a downstream service is probably unhealthy."
+
+      - alert: HighHttpLatency
+        expr: |
+          (
+            sum by (job) (rate(http_server_requests_seconds_sum{uri!~"/actuator.*"}[5m]))
+            /
+            sum by (job) (rate(http_server_requests_seconds_count{uri!~"/actuator.*"}[5m]))
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow responses on {{ $labels.job }}"
+          description: "Average response time of {{ $labels.job }} is {{ $value | humanizeDuration }} (threshold 1s)."
+
+  # ---------------------------------------------------------------------------
+  - name: kafka
+    rules:
+      - alert: KafkaConsumerLagHigh
+        expr: max by (job, client_id, topic) (kafka_consumer_fetch_manager_records_lag_max) > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer lag on {{ $labels.job }}"
+          description: "Consumer {{ $labels.client_id }} of {{ $labels.job }} is {{ $value }} records behind on {{ $labels.topic }}."
+          runbook: docs/runbooks/kafka-consumer-lag.md
+
+      - alert: KafkaConsumerLagCritical
+        expr: max by (job, client_id, topic) (kafka_consumer_fetch_manager_records_lag_max) > 10000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kafka consumer lag critical on {{ $labels.job }}"
+          description: "Consumer {{ $labels.client_id }} of {{ $labels.job }} is {{ $value }} records behind on {{ $labels.topic }}."
+          runbook: docs/runbooks/kafka-consumer-lag.md
+
+      - alert: KafkaListenerFailures
+        expr: sum by (job, name) (rate(spring_kafka_listener_seconds_count{result="failure"}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka listener errors in {{ $labels.job }}"
+          description: "Listener {{ $labels.name }} is failing {{ $value | humanize }} times/s; failed records go to the .DLT topic after retries."
+          runbook: docs/runbooks/dlq-reprocessing.md
+
+      - alert: KafkaProducerErrors
+        expr: sum by (job) (rate(spring_kafka_template_seconds_count{result="failure"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka send failures in {{ $labels.job }}"
+          description: "{{ $labels.job }} cannot publish to Kafka ({{ $value | humanize }} failures/s)."
+
+  # ---------------------------------------------------------------------------
+  - name: outbox
+    rules:
+      - alert: OutboxBacklogGrowing
+        expr: max by (job) (outbox_events_pending) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Outbox backlog on {{ $labels.job }}"
+          description: "{{ $value }} outbox events are waiting to be published by {{ $labels.job }} (threshold 100)."
+          runbook: docs/runbooks/outbox-backlog-recovery.md
+
+      - alert: OutboxBacklogStuck
+        # Backlog never reached zero in the last 15m AND it did not shrink.
+        expr: |
+          (min by (job) (min_over_time(outbox_events_pending[15m])) > 0)
+          and
+          (max by (job) (delta(outbox_events_pending[15m])) >= 0)
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Outbox relay of {{ $labels.job }} is not draining"
+          description: "Outbox events on {{ $labels.job }} have not decreased for 15 minutes - is Kafka reachable?"
+          runbook: docs/runbooks/outbox-backlog-recovery.md
+
+  # ---------------------------------------------------------------------------
+  - name: jvm-and-resources
+    rules:
+      - alert: JvmHeapUsageHigh
+        expr: |
+          sum by (job) (jvm_memory_used_bytes{area="heap"})
+          /
+          sum by (job) (jvm_memory_max_bytes{area="heap"} > 0)
+          > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High heap usage on {{ $labels.job }}"
+          description: "{{ $labels.job }} is using {{ $value | humanizePercentage }} of its max heap."
+
+      - alert: HighCpuUsage
+        expr: max by (job) (process_cpu_usage) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU on {{ $labels.job }}"
+          description: "{{ $labels.job }} process CPU is {{ $value | humanizePercentage }}."
+
+      - alert: DbConnectionPoolExhausted
+        expr: max by (job) (hikaricp_connections_pending) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DB connection pool saturated on {{ $labels.job }}"
+          description: "{{ $value }} threads are waiting for a database connection in {{ $labels.job }}."
+          runbook: docs/runbooks/database-failover.md

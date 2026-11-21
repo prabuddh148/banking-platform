@@ -1,0 +1,67 @@
+# Prometheus configuration - full docker stack (docker-compose.yml).
+# Every Spring Boot service exposes Micrometer metrics at /actuator/prometheus.
+# The job name is the service name; dashboards and alerts filter on `job`.
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    platform: banking
+    environment: local
+
+rule_files:
+  - /etc/prometheus/alert-rules.yml
+  - /etc/prometheus/recording-rules.yml
+
+scrape_configs:
+  # ---- Prometheus itself ----
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # ---- Banking services ----
+  - job_name: api-gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["api-gateway:8080"]
+        labels: { application: api-gateway, tier: edge }
+
+  - job_name: account-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["account-service:8081"]
+        labels: { application: account-service, tier: core }
+
+  - job_name: transaction-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["transaction-service:8082"]
+        labels: { application: transaction-service, tier: core }
+
+  - job_name: fraud-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["fraud-service:8083"]
+        labels: { application: fraud-service, tier: core }
+
+  - job_name: notification-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["notification-service:8084"]
+        labels: { application: notification-service, tier: support }
+
+  - job_name: audit-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["audit-service:8085"]
+        labels: { application: audit-service, tier: support }
+
+  # ---- OpenTelemetry Collector ----
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8888"]
+  - job_name: otel-collector-exported
+    honor_labels: true
+    static_configs:
+      - targets: ["otel-collector:8889"]

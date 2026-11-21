@@ -1,0 +1,57 @@
+# Kafka topic catalogue for the banking platform (documentation + source for
+# create-topics.sh, which creates exactly these topics).
+#
+# Conventions
+#   - name:    banking.<domain>.events, dead-letter topic = <name>.DLT
+#   - key:     aggregateId (accountId / transactionId / recipientId) -> per-aggregate ordering
+#   - value:   JSON string of an event extending BaseEvent (see ../schemas)
+#   - 3 partitions, replication factor 1 (single local broker; use 3 in production)
+
+defaults:
+  partitions: 3
+  replicationFactor: 1
+
+topics:
+  - name: banking.account.events
+    owner: account-service
+    retention.ms: 604800000          # 7 days
+    cleanup.policy: delete
+    events: [ACCOUNT_CREATED, ACCOUNT_STATUS_CHANGED, BALANCE_UPDATED, BALANCE_UPDATE_FAILED]
+    consumers: [transaction-service, notification-service, audit-service]
+
+  - name: banking.transaction.events
+    owner: transaction-service
+    retention.ms: 604800000
+    cleanup.policy: delete
+    events: [TRANSACTION_INITIATED, BALANCE_UPDATE_REQUESTED, TRANSACTION_COMPLETED, TRANSACTION_FAILED]
+    consumers: [fraud-service, account-service, notification-service, audit-service]
+
+  - name: banking.fraud.events
+    owner: fraud-service
+    retention.ms: 604800000
+    cleanup.policy: delete
+    events: [FRAUD_CLEARED, FRAUD_DETECTED]
+    consumers: [transaction-service, audit-service]
+
+  - name: banking.notification.events
+    owner: any service (notification requests)
+    retention.ms: 259200000          # 3 days
+    cleanup.policy: delete
+    events: [NOTIFICATION_REQUESTED]
+    consumers: [notification-service]
+
+  # Dead-letter topics: records that still fail after 3 retries (FixedBackOff 1s x 3)
+  # are published here by Spring's DeadLetterPublishingRecoverer.
+  # See docs/runbooks/dlq-reprocessing.md.
+  - name: banking.account.events.DLT
+    retention.ms: 2592000000         # 30 days - time to investigate
+    cleanup.policy: delete
+  - name: banking.transaction.events.DLT
+    retention.ms: 2592000000
+    cleanup.policy: delete
+  - name: banking.fraud.events.DLT
+    retention.ms: 2592000000
+    cleanup.policy: delete
+  - name: banking.notification.events.DLT
+    retention.ms: 2592000000
+    cleanup.policy: delete

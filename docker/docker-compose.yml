@@ -1,0 +1,385 @@
+# =============================================================================
+# Banking platform - FULL STACK (infrastructure + all 6 services)
+#
+#   cd docker
+#   cp .env.example .env          # optional, defaults work out of the box
+#   docker compose up -d --build  # first build takes a few minutes (Maven)
+#   docker compose ps             # wait until everything is "healthy"
+#
+# Endpoints on your machine:
+#   API gateway   http://localhost:8080   (login: POST /api/v1/auth/login)
+#   Services      http://localhost:8081..8085 (direct, for debugging)
+#   Kafka UI      http://localhost:8090
+#   MailHog       http://localhost:8025   (emails sent by notification-service)
+#   Prometheus    http://localhost:9090
+#   Grafana       http://localhost:3000   (admin / admin)
+#   Postgres      localhost:5432          (banking / banking)
+#   Kafka         localhost:9092
+#
+# Stop: docker compose down      Reset all data: docker compose down -v
+# =============================================================================
+name: banking-platform
+
+# ---------------------------------------------------------------------------
+# Shared settings (YAML anchors) for the six Spring Boot services
+# ---------------------------------------------------------------------------
+x-service-env: &service-env
+  SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
+  JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError}
+  TZ: UTC
+  # Database (DB_NAME is set per service)
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_USERNAME: ${POSTGRES_USER:-banking}
+  DB_PASSWORD: ${POSTGRES_PASSWORD:-banking}
+  # Kafka - containers use the INTERNAL listener
+  KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+  # Redis
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  # Security
+  JWT_SECRET: ${JWT_SECRET:-change-me-dev-secret-key-at-least-32-bytes-long}
+  JWT_EXPIRY: ${JWT_EXPIRY:-PT1H}
+  # Tracing (off by default)
+  TRACING_ENABLED: ${TRACING_ENABLED:-false}
+  MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector:4318/v1/traces
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [banking-net]
+  depends_on: &service-deps
+    postgres:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+    kafka-init:
+      condition: service_completed_successfully
+    redis:
+      condition: service_healthy
+  healthcheck: &service-healthcheck
+    # SERVER_PORT is set in each service's Dockerfile
+    test: ["CMD-SHELL", "curl -fsS http://localhost:$${SERVER_PORT}/actuator/health || exit 1"]
+    interval: 15s
+    timeout: 5s
+    retries: 10
+    start_period: 90s
+  deploy:
+    resources:
+      limits:
+        memory: 768m
+  logging: &default-logging
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  # ===========================================================================
+  # Infrastructure
+  # ===========================================================================
+  postgres:
+    build:
+      context: ./postgresql
+    image: banking/postgres:local
+    container_name: banking-postgres
+    env_file: ./postgresql/postgres.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-banking}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-banking}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks: [banking-net]
+    logging: *default-logging
+
+  zookeeper:
+    build:
+      context: ./zookeeper
+    image: banking/zookeeper:local
+    container_name: banking-zookeeper
+    env_file: ./zookeeper/zookeeper.env
+    volumes:
+      - zookeeper-data:/data
+      - zookeeper-datalog:/datalog
+    healthcheck:
+      test: ["CMD-SHELL", "zkServer.sh status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+    networks: [banking-net]
+    logging: *default-logging
+
+  kafka:
+    build:
+      context: ./kafka
+    image: banking/kafka:local
+    container_name: banking-kafka
+    env_file: ./kafka/kafka.env
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      # EXTERNAL listener (advertised as localhost:9092) for tools/IDE on the host
+      - "${KAFKA_PORT:-9092}:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:29092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    networks: [banking-net]
+    logging: *default-logging
+
+  # One-shot job: creates all topics (+ .DLT) with 3 partitions, then exits.
+  kafka-init:
+    build:
+      context: ./kafka
+    image: banking/kafka:local
+    container_name: banking-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["bash", "/scripts/create-topics.sh"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    volumes:
+      - ../infrastructure/kafka/topics:/scripts:ro
+    restart: "no"
+    healthcheck:
+      disable: true
+    networks: [banking-net]
+
+  kafka-ui:
+    build:
+      context: ./kafka-ui
+    image: banking/kafka-ui:local
+    container_name: banking-kafka-ui
+    env_file: ./kafka-ui/kafka-ui.env
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "${KAFKA_UI_PORT:-8090}:8080"
+    restart: unless-stopped
+    networks: [banking-net]
+    logging: *default-logging
+
+  redis:
+    image: redis:7.2.5-alpine
+    container_name: banking-redis
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks: [banking-net]
+    logging: *default-logging
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: banking-mailhog
+    ports:
+      - "${MAILHOG_SMTP_PORT:-1025}:1025"   # SMTP
+      - "${MAILHOG_UI_PORT:-8025}:8025"     # Web UI
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null 'http://localhost:8025/api/v2/messages?limit=1' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks: [banking-net]
+    logging: *default-logging
+
+  otel-collector:
+    build:
+      context: ./otel-collector
+    image: banking/otel-collector:local
+    container_name: banking-otel-collector
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    restart: unless-stopped
+    networks: [banking-net]
+    logging: *default-logging
+
+  prometheus:
+    build:
+      context: ./prometheus
+    image: banking/prometheus:local
+    container_name: banking-prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ../infrastructure/observability/prometheus/recording-rules.yml:/etc/prometheus/recording-rules.yml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+    networks: [banking-net]
+    logging: *default-logging
+
+  grafana:
+    build:
+      context: ./grafana
+    image: banking/grafana:local
+    container_name: banking-grafana
+    env_file: ./grafana/grafana.env
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    restart: unless-stopped
+    networks: [banking-net]
+    logging: *default-logging
+
+  # ===========================================================================
+  # Banking services (build context = repo root, multi-module Maven)
+  # ===========================================================================
+  account-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: account-service/Dockerfile
+    image: banking/account-service:local
+    container_name: banking-account-service
+    environment:
+      <<: *service-env
+      DB_NAME: accounts_db
+    ports:
+      - "8081:8081"
+
+  transaction-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: transaction-service/Dockerfile
+    image: banking/transaction-service:local
+    container_name: banking-transaction-service
+    environment:
+      <<: *service-env
+      DB_NAME: transactions_db
+      SAGA_TIMEOUT_MINUTES: "15"
+    ports:
+      - "8082:8082"
+
+  fraud-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: fraud-service/Dockerfile
+    image: banking/fraud-service:local
+    container_name: banking-fraud-service
+    environment:
+      <<: *service-env
+      DB_NAME: fraud_db
+    ports:
+      - "8083:8083"
+
+  notification-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: notification-service/Dockerfile
+    image: banking/notification-service:local
+    container_name: banking-notification-service
+    depends_on:
+      <<: *service-deps
+      mailhog:
+        condition: service_healthy
+    environment:
+      <<: *service-env
+      DB_NAME: notifications_db
+      MAIL_HOST: mailhog
+      MAIL_PORT: "1025"
+    ports:
+      - "8084:8084"
+
+  audit-service:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: audit-service/Dockerfile
+    image: banking/audit-service:local
+    container_name: banking-audit-service
+    environment:
+      <<: *service-env
+      DB_NAME: audit_db
+    ports:
+      - "8085:8085"
+
+  api-gateway:
+    <<: *service-defaults
+    build:
+      context: ..
+      dockerfile: api-gateway/Dockerfile
+    image: banking/api-gateway:local
+    container_name: banking-api-gateway
+    # The gateway has no database/Kafka; it only needs the services to exist.
+    depends_on:
+      redis:
+        condition: service_healthy
+      account-service:
+        condition: service_started
+      transaction-service:
+        condition: service_started
+      fraud-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+      audit-service:
+        condition: service_started
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=75 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError}
+      TZ: UTC
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      JWT_SECRET: ${JWT_SECRET:-change-me-dev-secret-key-at-least-32-bytes-long}
+      JWT_EXPIRY: ${JWT_EXPIRY:-PT1H}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      ACCOUNT_SERVICE_URL: http://account-service:8081
+      TRANSACTION_SERVICE_URL: http://transaction-service:8082
+      FRAUD_SERVICE_URL: http://fraud-service:8083
+      NOTIFICATION_SERVICE_URL: http://notification-service:8084
+      AUDIT_SERVICE_URL: http://audit-service:8085
+      TRACING_ENABLED: ${TRACING_ENABLED:-false}
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector:4318/v1/traces
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+
+networks:
+  banking-net:
+    name: banking-net
+    driver: bridge
+
+volumes:
+  postgres-data:
+  zookeeper-data:
+  zookeeper-datalog:
+  kafka-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:

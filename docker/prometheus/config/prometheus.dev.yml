@@ -1,0 +1,61 @@
+# Prometheus configuration - dev mode (docker-compose.dev.yml).
+# Infra runs in docker, the services run from your IDE on the host, so we
+# scrape them through host.docker.internal (mapped to the host gateway in
+# docker-compose.dev.yml via extra_hosts - works on Docker Desktop and Linux).
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    platform: banking
+    environment: dev
+
+rule_files:
+  - /etc/prometheus/alert-rules.yml
+  - /etc/prometheus/recording-rules.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: api-gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+        labels: { application: api-gateway, tier: edge }
+
+  - job_name: account-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8081"]
+        labels: { application: account-service, tier: core }
+
+  - job_name: transaction-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8082"]
+        labels: { application: transaction-service, tier: core }
+
+  - job_name: fraud-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8083"]
+        labels: { application: fraud-service, tier: core }
+
+  - job_name: notification-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8084"]
+        labels: { application: notification-service, tier: support }
+
+  - job_name: audit-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8085"]
+        labels: { application: audit-service, tier: support }
+
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8888"]

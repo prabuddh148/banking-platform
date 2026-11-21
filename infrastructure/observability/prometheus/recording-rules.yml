@@ -1,0 +1,71 @@
+# Prometheus recording rules - pre-computed series used by dashboards/alerts.
+# Mounted into the Prometheus container by docker/docker-compose*.yml at
+# /etc/prometheus/recording-rules.yml.
+#
+# Naming convention: level:metric:operations  (https://prometheus.io/docs/practices/rules/)
+
+groups:
+  - name: banking-http
+    interval: 30s
+    rules:
+      # Requests per second per service (actuator traffic excluded).
+      - record: job:http_server_requests:rate5m
+        expr: sum by (job) (rate(http_server_requests_seconds_count{uri!~"/actuator.*"}[5m]))
+
+      # 5xx responses per second per service.
+      - record: job:http_server_requests_5xx:rate5m
+        expr: sum by (job) (rate(http_server_requests_seconds_count{status=~"5..", uri!~"/actuator.*"}[5m]))
+
+      # Error ratio (0..1) per service.
+      - record: job:http_server_requests_error_ratio:rate5m
+        expr: |
+          job:http_server_requests_5xx:rate5m
+          /
+          (job:http_server_requests:rate5m > 0)
+
+      # Average latency in seconds per service.
+      - record: job:http_server_requests_latency_avg:rate5m
+        expr: |
+          sum by (job) (rate(http_server_requests_seconds_sum{uri!~"/actuator.*"}[5m]))
+          /
+          (sum by (job) (rate(http_server_requests_seconds_count{uri!~"/actuator.*"}[5m])) > 0)
+
+      # p95 latency - only produced when percentiles-histogram is enabled:
+      # management.metrics.distribution.percentiles-histogram.http.server.requests=true
+      - record: job:http_server_requests_latency_p95:rate5m
+        expr: histogram_quantile(0.95, sum by (job, le) (rate(http_server_requests_seconds_bucket{uri!~"/actuator.*"}[5m])))
+
+      # Requests per second per endpoint (uri) - used by the transaction dashboard.
+      - record: job_uri_status:http_server_requests:rate5m
+        expr: sum by (job, uri, method, status) (rate(http_server_requests_seconds_count{uri!~"/actuator.*"}[5m]))
+
+  - name: banking-kafka
+    interval: 30s
+    rules:
+      # Max lag per service and topic.
+      - record: job_topic:kafka_consumer_lag:max
+        expr: max by (job, topic) (kafka_consumer_fetch_manager_records_lag_max)
+
+      # Records consumed per second per service and topic.
+      - record: job_topic:kafka_consumer_records_consumed:rate5m
+        expr: sum by (job, topic) (rate(kafka_consumer_fetch_manager_records_consumed_total[5m]))
+
+      # Listener invocations per second per service and outcome (success|failure).
+      - record: job_result:spring_kafka_listener:rate5m
+        expr: sum by (job, result) (rate(spring_kafka_listener_seconds_count[5m]))
+
+      # KafkaTemplate sends per second per service and outcome.
+      - record: job_result:spring_kafka_template:rate5m
+        expr: sum by (job, result) (rate(spring_kafka_template_seconds_count[5m]))
+
+  - name: banking-jvm
+    interval: 30s
+    rules:
+      - record: job:jvm_heap_used_ratio
+        expr: |
+          sum by (job) (jvm_memory_used_bytes{area="heap"})
+          /
+          (sum by (job) (jvm_memory_max_bytes{area="heap"}) > 0)
+
+      - record: job:jvm_gc_pause_seconds:rate5m
+        expr: sum by (job) (rate(jvm_gc_pause_seconds_sum[5m]))

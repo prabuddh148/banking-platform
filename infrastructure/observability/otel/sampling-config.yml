@@ -1,0 +1,86 @@
+# -----------------------------------------------------------------------------
+# Trace sampling policy for SHARED environments (staging / production).
+#
+# Locally docker/otel-collector keeps 100% of traces (probabilistic_sampler
+# at 100). In a shared environment, merge this `processors` block into the
+# collector config and replace `probabilistic_sampler` with `tail_sampling`
+# in the traces pipeline:
+#
+#   service:
+#     pipelines:
+#       traces:
+#         receivers:  [otlp]
+#         processors: [memory_limiter, tail_sampling, resource, batch]
+#         exporters:  [<your tracing backend>]
+#
+# Tail sampling waits until a trace is complete (decision_wait) and then keeps
+# it if ANY policy matches. Requires the contrib collector distribution, and
+# all spans of a trace must reach the same collector instance (use the
+# loadbalancing exporter in front if you run several collectors).
+#
+# Service-side head sampling (Spring Boot): keep the SDK sending everything and
+# let the collector decide:
+#   management.tracing.sampling.probability: 1.0
+# -----------------------------------------------------------------------------
+
+processors:
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 50000
+    expected_new_traces_per_sec: 100
+    policies:
+      # 1) Always keep failed requests / failed spans.
+      - name: keep-errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+
+      # 2) Always keep slow traces (saga steps, DB locks, Kafka publish).
+      - name: keep-slow
+        type: latency
+        latency:
+          threshold_ms: 1000
+
+      # 3) Always keep money-movement and fraud flows - they are what we debug.
+      - name: keep-money-movement
+        type: string_attribute
+        string_attribute:
+          key: http.route
+          values:
+            - /api/v1/transactions/deposit
+            - /api/v1/transactions/withdraw
+            - /api/v1/transactions/transfer
+            - /api/v1/fraud/alerts/{id}/review
+            - /api/v1/accounts/{id}/freeze
+            - /api/v1/accounts/{id}/close
+
+      # 4) Always keep traces from fraud-service (low volume, high value).
+      - name: keep-fraud-service
+        type: string_attribute
+        string_attribute:
+          key: service.name
+          values: [fraud-service]
+
+      # 5) Baseline: keep 10% of everything else EXCEPT actuator (health checks,
+      #    Prometheus scrapes), which matches no policy and is therefore dropped.
+      - name: baseline-non-actuator
+        type: and
+        and:
+          and_sub_policy:
+            - name: not-actuator
+              type: string_attribute
+              string_attribute:
+                key: http.route
+                values: ["/actuator.*"]
+                enabled_regex_matching: true
+                invert_match: true
+            - name: sample-rest
+              type: probabilistic
+              probabilistic:
+                sampling_percentage: 10
+
+# Per-environment baseline for everything not matched above (policy 5's
+# probabilistic sub-policy). Suggested values:
+#   dev        100%   (use the local collector config instead)
+#   staging     25%
+#   production  10%

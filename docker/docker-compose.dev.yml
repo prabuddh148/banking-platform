@@ -1,0 +1,213 @@
+# =============================================================================
+# Banking platform - DEV MODE (infrastructure only)
+#
+# Runs Postgres, Kafka, Redis, MailHog and the observability stack in docker;
+# you run the Spring Boot services from your IDE (or `mvn spring-boot:run`).
+# The services' defaults (localhost:5432, localhost:9092, localhost:6379,
+# localhost:1025) already point here, so no env vars are needed.
+#
+#   cd docker
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml down      (-v to wipe data)
+#
+# Prometheus scrapes the services on your host via host.docker.internal.
+# =============================================================================
+name: banking-platform-dev
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    build:
+      context: ./postgresql
+    image: banking/postgres:local
+    container_name: banking-dev-postgres
+    env_file: ./postgresql/postgres.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-banking}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-banking}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - dev-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks: [banking-dev-net]
+    logging: *default-logging
+
+  zookeeper:
+    build:
+      context: ./zookeeper
+    image: banking/zookeeper:local
+    container_name: banking-dev-zookeeper
+    env_file: ./zookeeper/zookeeper.env
+    volumes:
+      - dev-zookeeper-data:/data
+      - dev-zookeeper-datalog:/datalog
+    healthcheck:
+      test: ["CMD-SHELL", "zkServer.sh status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+    networks: [banking-dev-net]
+    logging: *default-logging
+
+  kafka:
+    build:
+      context: ./kafka
+    image: banking/kafka:local
+    # Must be resolvable as "kafka" (the INTERNAL advertised listener is kafka:29092).
+    container_name: banking-dev-kafka
+    hostname: kafka
+    env_file: ./kafka/kafka.env
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    volumes:
+      - dev-kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:29092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    networks: [banking-dev-net]
+    logging: *default-logging
+
+  kafka-init:
+    build:
+      context: ./kafka
+    image: banking/kafka:local
+    container_name: banking-dev-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["bash", "/scripts/create-topics.sh"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    volumes:
+      - ../infrastructure/kafka/topics:/scripts:ro
+    restart: "no"
+    healthcheck:
+      disable: true
+    networks: [banking-dev-net]
+
+  kafka-ui:
+    build:
+      context: ./kafka-ui
+    image: banking/kafka-ui:local
+    container_name: banking-dev-kafka-ui
+    env_file: ./kafka-ui/kafka-ui.env
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "${KAFKA_UI_PORT:-8090}:8080"
+    restart: unless-stopped
+    networks: [banking-dev-net]
+    logging: *default-logging
+
+  redis:
+    image: redis:7.2.5-alpine
+    container_name: banking-dev-redis
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - dev-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks: [banking-dev-net]
+    logging: *default-logging
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: banking-dev-mailhog
+    ports:
+      - "${MAILHOG_SMTP_PORT:-1025}:1025"
+      - "${MAILHOG_UI_PORT:-8025}:8025"
+    restart: unless-stopped
+    networks: [banking-dev-net]
+    logging: *default-logging
+
+  otel-collector:
+    build:
+      context: ./otel-collector
+    image: banking/otel-collector:local
+    container_name: banking-dev-otel-collector
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    restart: unless-stopped
+    networks: [banking-dev-net]
+    logging: *default-logging
+
+  prometheus:
+    build:
+      context: ./prometheus
+    image: banking/prometheus:local
+    container_name: banking-dev-prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      # Dev config scrapes the services running on the host
+      - ./prometheus/config/prometheus.dev.yml:/etc/prometheus/prometheus.yml:ro
+      - ../infrastructure/observability/prometheus/recording-rules.yml:/etc/prometheus/recording-rules.yml:ro
+      - dev-prometheus-data:/prometheus
+    restart: unless-stopped
+    networks: [banking-dev-net]
+    logging: *default-logging
+
+  grafana:
+    build:
+      context: ./grafana
+    image: banking/grafana:local
+    container_name: banking-dev-grafana
+    env_file: ./grafana/grafana.env
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - dev-grafana-data:/var/lib/grafana
+    restart: unless-stopped
+    networks: [banking-dev-net]
+    logging: *default-logging
+
+networks:
+  banking-dev-net:
+    name: banking-dev-net
+    driver: bridge
+
+volumes:
+  dev-postgres-data:
+  dev-zookeeper-data:
+  dev-zookeeper-datalog:
+  dev-kafka-data:
+  dev-redis-data:
+  dev-prometheus-data:
+  dev-grafana-data:
