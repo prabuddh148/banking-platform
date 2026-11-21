@@ -1,0 +1,25 @@
+# Local development tweaks: activate with SPRING_PROFILES_ACTIVE=dev
+spring:
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  thymeleaf:
+    cache: false          # pick up template edits without a restart
+
+notification:
+  retry:
+    interval-ms: 15000    # retry failed notifications faster while developing
+    initial-delay-ms: 5000
+
+management:
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.banking: DEBUG
+    org.springframework.kafka: INFO
+    org.hibernate.SQL: DEBUG
