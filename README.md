@@ -8,6 +8,9 @@ This README is the complete reference: architecture, every service and class pac
 endpoint, every Kafka event, every database table and column, every config value, and how to run
 and test everything. Deeper write-ups live in [`docs/`](docs/).
 
+**Live UI demo:** <https://prabuddh148.github.io/banking-platform/>. The frontend runs in mock mode
+(demo data in the browser, no backend). Log in as `rahul` / `password` (customer) or `admin` / `admin123` (admin).
+
 > Learning project. Not a real bank. Do not use with real money or real personal data.
 
 ---
