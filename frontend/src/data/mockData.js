@@ -1,24 +1,16 @@
 // -----------------------------------------------------------------------------
 // Mock data for the banking platform frontend.
-// This stands in for the (not-yet-built) microservice APIs. Everything the UI
-// renders comes from here so the app runs standalone. Swap these exports for
-// real API calls later without touching the components.
+// Only used when VITE_USE_MOCK=true: the services in src/services/ return this
+// data (via src/services/mock/mockStore.js) instead of calling the API gateway.
+// The shapes here are the "UI shapes" that the real-API mappers also produce.
 // -----------------------------------------------------------------------------
 
-export const currentUser = {
-  id: 'u_10023',
-  name: 'Ava Mitchell',
-  email: 'ava.mitchell@example.com',
-  since: '2019-03-14',
-  tier: 'Premier',
-}
-
-export const adminUser = {
-  id: 'a_2001',
-  name: 'Devon Ellis',
-  email: 'devon.ellis@meridian.internal',
-  role: 'Operations Lead',
-}
+// Same demo users the api-gateway issues tokens for (see SPEC / README).
+export const demoUsers = [
+  { username: 'rahul', password: 'password', user: { userId: 'CUST-1001', username: 'rahul', name: 'Rahul Sharma', email: 'rahul.sharma@example.com', roles: ['ROLE_CUSTOMER'] } },
+  { username: 'priya', password: 'password', user: { userId: 'CUST-1002', username: 'priya', name: 'Priya Patel', email: 'priya.patel@example.com', roles: ['ROLE_CUSTOMER'] } },
+  { username: 'admin', password: 'admin123', user: { userId: 'ADMIN-1', username: 'admin', name: 'Devon Ellis', email: 'admin@meridian.bank', roles: ['ROLE_ADMIN', 'ROLE_CUSTOMER'] } },
+]
 
 // --- Customer: accounts --------------------------------------------------------
 export const accounts = [
@@ -114,13 +106,14 @@ export const platformTxnVolume = [
 ]
 
 // --- Admin: fraud alerts -------------------------------------------------------
+// Status vocabulary matches fraud-service: Open (OPEN), Approved (APPROVED), Rejected (REJECTED).
 export const fraudAlerts = [
-  { id: 'fr_5001', txnId: 'txn_88123', customer: 'Marcus Reed', accountNumber: '**** 9921', amount: 4200.0, riskScore: 94, reason: 'Unusual location + high amount', status: 'Open', createdAt: '2026-07-19T07:41:00' },
-  { id: 'fr_5002', txnId: 'txn_88090', customer: 'Priya Nair', accountNumber: '**** 3310', amount: 899.99, riskScore: 81, reason: 'Card-not-present velocity', status: 'Reviewing', createdAt: '2026-07-19T06:58:00' },
-  { id: 'fr_5003', txnId: 'txn_87740', customer: 'Ava Mitchell', accountNumber: '**** 1140', amount: 612.4, riskScore: 63, reason: 'First-time merchant, travel', status: 'Reviewing', createdAt: '2026-07-16T14:41:00' },
-  { id: 'fr_5004', txnId: 'txn_87001', customer: 'Leo Tanaka', accountNumber: '**** 5567', amount: 12500.0, riskScore: 97, reason: 'Structuring pattern detected', status: 'Blocked', createdAt: '2026-07-18T22:10:00' },
-  { id: 'fr_5005', txnId: 'txn_86550', customer: 'Sofia Ramos', accountNumber: '**** 2204', amount: 78.35, riskScore: 44, reason: 'Mismatched billing ZIP', status: 'Cleared', createdAt: '2026-07-18T19:03:00' },
-  { id: 'fr_5006', txnId: 'txn_86210', customer: 'Elena Fischer', accountNumber: '**** 7781', amount: 2650.0, riskScore: 88, reason: 'Account takeover signals', status: 'Open', createdAt: '2026-07-19T05:22:00' },
+  { id: 'fr_5001', txnId: 'txn_88123', customer: 'Marcus Reed', accountNumber: '**** 9921', amount: 4200.0, currency: 'USD', riskScore: 94, riskLevel: 'CRITICAL', triggeredRules: ['GeographicRule', 'AmountThresholdRule'], reason: 'Unusual location + high amount', status: 'Open', createdAt: '2026-07-19T07:41:00' },
+  { id: 'fr_5002', txnId: 'txn_88090', customer: 'Priya Nair', accountNumber: '**** 3310', amount: 899.99, currency: 'USD', riskScore: 81, riskLevel: 'CRITICAL', triggeredRules: ['VelocityRule'], reason: 'Card-not-present velocity', status: 'Open', createdAt: '2026-07-19T06:58:00' },
+  { id: 'fr_5003', txnId: 'txn_87740', customer: 'Ava Mitchell', accountNumber: '**** 1140', amount: 612.4, currency: 'USD', riskScore: 63, riskLevel: 'HIGH', triggeredRules: ['PatternAnomalyRule'], reason: 'First-time merchant, travel', status: 'Open', createdAt: '2026-07-16T14:41:00' },
+  { id: 'fr_5004', txnId: 'txn_87001', customer: 'Leo Tanaka', accountNumber: '**** 5567', amount: 12500.0, currency: 'USD', riskScore: 97, riskLevel: 'CRITICAL', triggeredRules: ['AmountThresholdRule', 'PatternAnomalyRule'], reason: 'Structuring pattern detected', status: 'Rejected', reviewedBy: 'admin', createdAt: '2026-07-18T22:10:00' },
+  { id: 'fr_5005', txnId: 'txn_86550', customer: 'Sofia Ramos', accountNumber: '**** 2204', amount: 78.35, currency: 'USD', riskScore: 64, riskLevel: 'HIGH', triggeredRules: ['GeographicRule'], reason: 'Mismatched billing ZIP', status: 'Approved', reviewedBy: 'admin', createdAt: '2026-07-18T19:03:00' },
+  { id: 'fr_5006', txnId: 'txn_86210', customer: 'Elena Fischer', accountNumber: '**** 7781', amount: 2650.0, currency: 'USD', riskScore: 88, riskLevel: 'CRITICAL', triggeredRules: ['VelocityRule', 'GeographicRule'], reason: 'Account takeover signals', status: 'Open', createdAt: '2026-07-19T05:22:00' },
 ]
 
 // --- Admin: audit log ----------------------------------------------------------

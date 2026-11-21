@@ -1,5 +1,5 @@
-import { ShieldCheck, Receipt, Landmark, Sparkles, CheckCheck, BellOff } from 'lucide-react'
-import { PageHeader, Card, EmptyState } from '../../components/ui/Primitives.jsx'
+import { ShieldCheck, Receipt, Landmark, Sparkles, CheckCheck, BellOff, RefreshCw } from 'lucide-react'
+import { PageHeader, Card, EmptyState, LoadingState, ErrorState, Spinner } from '../../components/ui/Primitives.jsx'
 import { useApp } from '../../context/AppContext.jsx'
 import { relativeTime } from '../../lib/format.js'
 
@@ -11,7 +11,12 @@ const typeMeta = {
 }
 
 export default function Notifications() {
-  const { notifications, markAllRead, markRead, unreadCount } = useApp()
+  const {
+    notifications, notificationsLoading, notificationsError, refreshNotifications,
+    markAllRead, markRead, unreadCount,
+  } = useApp()
+
+  const initialLoad = notificationsLoading && notifications.length === 0
 
   return (
     <>
@@ -19,15 +24,24 @@ export default function Notifications() {
         title="Notifications"
         subtitle={unreadCount > 0 ? `${unreadCount} unread` : 'You’re all caught up.'}
         action={
-          <button className="btn-ghost" onClick={markAllRead} disabled={unreadCount === 0}>
-            <CheckCheck size={16} /> Mark all read
-          </button>
+          <div className="flex gap-2">
+            <button className="btn-ghost" onClick={refreshNotifications} disabled={notificationsLoading}>
+              {notificationsLoading ? <Spinner /> : <RefreshCw size={16} />} Refresh
+            </button>
+            <button className="btn-ghost" onClick={markAllRead} disabled={unreadCount === 0}>
+              <CheckCheck size={16} /> Mark all read
+            </button>
+          </div>
         }
       />
 
       <Card className="overflow-hidden">
-        {notifications.length === 0 ? (
-          <EmptyState icon={BellOff} title="No notifications" />
+        {notificationsError ? (
+          <ErrorState error={notificationsError} onRetry={refreshNotifications} title="Couldn't load notifications" />
+        ) : initialLoad ? (
+          <LoadingState label="Loading notifications…" />
+        ) : notifications.length === 0 ? (
+          <EmptyState icon={BellOff} title="No notifications" message="Account and transaction updates will appear here." />
         ) : (
           <ul className="divide-y divide-slate-100">
             {notifications.map((n) => {
@@ -36,7 +50,7 @@ export default function Notifications() {
               return (
                 <li
                   key={n.id}
-                  onClick={() => markRead(n.id)}
+                  onClick={() => !n.read && markRead(n.id)}
                   className={`flex cursor-pointer items-start gap-4 p-5 transition-colors hover:bg-slate-50 ${!n.read ? 'bg-brand-50/40' : ''}`}
                 >
                   <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg ${meta.tone}`}>
@@ -47,7 +61,12 @@ export default function Notifications() {
                       <p className="font-semibold text-slate-800">{n.title}</p>
                       {!n.read && <span className="h-2 w-2 rounded-full bg-brand-500" />}
                     </div>
-                    <p className="mt-0.5 text-sm text-slate-500">{n.message}</p>
+                    <p className="mt-0.5 whitespace-pre-line text-sm text-slate-500">{n.message}</p>
+                    {(n.channel || n.status) && (
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        {[n.channel, n.recipient, n.status].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
                   </div>
                   <span className="shrink-0 text-xs text-slate-400">{relativeTime(n.date)}</span>
                 </li>

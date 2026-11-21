@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate, Link } from 'react-router-dom'
 import Layout from './components/layout/Layout.jsx'
+import { RequireAuth, RequireAdmin } from './components/auth/RouteGuards.jsx'
+import Login from './pages/Login.jsx'
 
 // Customer
 import Dashboard from './pages/customer/Dashboard.jsx'
@@ -29,24 +31,31 @@ function NotFound() {
 export default function App() {
   return (
     <Routes>
-      <Route element={<Layout />}>
-        {/* Customer */}
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/accounts" element={<Accounts />} />
-        <Route path="/transfer" element={<Transfer />} />
-        <Route path="/transactions" element={<Transactions />} />
-        <Route path="/notifications" element={<Notifications />} />
+      <Route path="/login" element={<Login />} />
 
-        {/* Admin */}
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/admin/accounts" element={<AdminAccounts />} />
-        <Route path="/admin/transactions" element={<AdminTransactions />} />
-        <Route path="/admin/fraud" element={<FraudAlerts />} />
-        <Route path="/admin/audit" element={<AuditLog />} />
-        <Route path="/admin/services" element={<ServiceHealth />} />
+      {/* Everything else needs a logged-in user */}
+      <Route element={<RequireAuth />}>
+        <Route element={<Layout />}>
+          {/* Customer */}
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/accounts" element={<Accounts />} />
+          <Route path="/transfer" element={<Transfer />} />
+          <Route path="/transactions" element={<Transactions />} />
+          <Route path="/notifications" element={<Notifications />} />
 
-        <Route path="/404" element={<NotFound />} />
-        <Route path="*" element={<Navigate to="/404" replace />} />
+          {/* Admin (ROLE_ADMIN only) */}
+          <Route element={<RequireAdmin />}>
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/accounts" element={<AdminAccounts />} />
+            <Route path="/admin/transactions" element={<AdminTransactions />} />
+            <Route path="/admin/fraud" element={<FraudAlerts />} />
+            <Route path="/admin/audit" element={<AuditLog />} />
+            <Route path="/admin/services" element={<ServiceHealth />} />
+          </Route>
+
+          <Route path="/404" element={<NotFound />} />
+          <Route path="*" element={<Navigate to="/404" replace />} />
+        </Route>
       </Route>
     </Routes>
   )

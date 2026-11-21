@@ -4,6 +4,7 @@ import {
   ShieldAlert, ScrollText, Activity, Users, Landmark,
 } from 'lucide-react'
 import { useApp } from '../../context/AppContext.jsx'
+import { USE_MOCK, API_BASE_URL } from '../../lib/config.js'
 
 const customerNav = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
@@ -65,10 +66,19 @@ export default function Sidebar() {
 
       <div className="px-4 py-4 border-t border-white/10">
         <div className="rounded-lg bg-white/5 p-3 text-xs text-slate-400">
-          <p className="font-semibold text-slate-200">Mock environment</p>
-          <p className="mt-1 leading-relaxed">
-            All data is simulated. No backend is connected.
-          </p>
+          {USE_MOCK ? (
+            <>
+              <p className="font-semibold text-slate-200">Mock environment</p>
+              <p className="mt-1 leading-relaxed">All data is simulated (VITE_USE_MOCK=true). No backend is called.</p>
+            </>
+          ) : (
+            <>
+              <p className="flex items-center gap-1.5 font-semibold text-slate-200">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" /> Live API
+              </p>
+              <p className="mt-1 leading-relaxed break-all">Connected via the API gateway{API_BASE_URL ? ` at ${API_BASE_URL}` : ''}.</p>
+            </>
+          )}
         </div>
       </div>
     </aside>

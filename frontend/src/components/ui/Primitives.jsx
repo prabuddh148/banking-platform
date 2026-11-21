@@ -1,5 +1,7 @@
 // Small, dependency-free UI primitives used across customer + admin pages.
 // Charts are hand-rolled SVG/flex so there's no charting library to install.
+import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
+import { USE_MOCK } from '../../lib/config.js'
 
 export function PageHeader({ title, subtitle, action }) {
   return (
@@ -24,6 +26,7 @@ export function StatCard({ label, value, delta, icon: Icon, tone = 'brand' }) {
     amber: 'bg-amber-50 text-amber-600',
     red: 'bg-rose-50 text-rose-600',
     slate: 'bg-slate-100 text-slate-600',
+    blue: 'bg-sky-50 text-sky-600',
   }
   return (
     <div className="card p-5">
@@ -72,15 +75,24 @@ export function StatusBadge({ status }) {
     Operational: 'green',
     Posted: 'green',
     Cleared: 'green',
+    Completed: 'green',
+    Approved: 'green',
+    Sent: 'green',
+    Delivered: 'green',
     Pending: 'amber',
     Reviewing: 'amber',
     Degraded: 'amber',
     'Under Review': 'amber',
+    Processing: 'blue',
     Dormant: 'slate',
+    Closed: 'slate',
+    Unknown: 'slate',
     Open: 'red',
     Blocked: 'red',
+    Rejected: 'red',
     Frozen: 'red',
     Down: 'red',
+    Failed: 'red',
   }
   return <Badge tone={map[status] || 'slate'}>{status}</Badge>
 }
@@ -104,6 +116,7 @@ export function BarChart({ data, height = 120, color = 'bg-brand-500' }) {
 
 // Smooth area sparkline via SVG polyline.
 export function Sparkline({ data, height = 64, stroke = '#4f46e5' }) {
+  if (!Array.isArray(data) || data.length < 2) return <div style={{ height }} />
   const max = Math.max(...data)
   const min = Math.min(...data)
   const range = max - min || 1
@@ -148,12 +161,85 @@ export function CategoryBars({ items, format }) {
   )
 }
 
-export function EmptyState({ icon: Icon, title, message }) {
+export function EmptyState({ icon: Icon, title, message, action }) {
   return (
     <div className="grid place-items-center py-16 text-center">
       {Icon && <Icon size={40} className="text-slate-300" />}
       <p className="mt-3 font-semibold text-slate-700">{title}</p>
       {message && <p className="mt-1 text-sm text-slate-500">{message}</p>}
+      {action && <div className="mt-4">{action}</div>}
     </div>
   )
+}
+
+export function Spinner({ size = 16, className = '' }) {
+  return <Loader2 size={size} className={`animate-spin ${className}`} />
+}
+
+export function LoadingState({ label = 'Loading…' }) {
+  return (
+    <div className="grid place-items-center py-16 text-center text-slate-500">
+      <Spinner size={28} className="text-brand-500" />
+      <p className="mt-3 text-sm">{label}</p>
+    </div>
+  )
+}
+
+// Shows an ApiError (message + backend error code) with an optional retry button.
+export function ErrorState({ error, onRetry, title = 'Something went wrong' }) {
+  const isNetwork = error?.code === 'NETWORK_ERROR'
+  return (
+    <div className="grid place-items-center py-14 text-center">
+      <div className="grid h-12 w-12 place-items-center rounded-full bg-rose-50 text-rose-600">
+        <AlertTriangle size={24} />
+      </div>
+      <p className="mt-3 font-semibold text-slate-800">{title}</p>
+      <p className="mt-1 max-w-md text-sm text-slate-500">{error?.message || 'Unexpected error.'}</p>
+      {error?.code && <p className="mt-1 font-mono text-xs text-slate-400">{error.code}{error.status ? ` · HTTP ${error.status}` : ''}</p>}
+      {isNetwork && !USE_MOCK && (
+        <p className="mt-2 max-w-md text-xs text-slate-400">
+          Start the backend (docker compose) or run the UI with <span className="font-mono">VITE_USE_MOCK=true</span>.
+        </p>
+      )}
+      {onRetry && (
+        <button className="btn-ghost mt-4" onClick={onRetry}>
+          <RefreshCw size={15} /> Try again
+        </button>
+      )}
+    </div>
+  )
+}
+
+// Inline error banner (form submit errors, partial dashboard failures).
+export function ErrorBanner({ error, children }) {
+  if (!error && !children) return null
+  const details = error?.details && typeof error.details === 'object' ? Object.entries(error.details) : []
+  return (
+    <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+      <div className="flex items-start gap-2">
+        <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+        <div>
+          {error && <p className="font-medium">{error.message}</p>}
+          {details.length > 0 && (
+            <ul className="mt-1 list-disc pl-4 text-xs">
+              {details.map(([field, msg]) => <li key={field}><span className="font-mono">{field}</span>: {msg}</li>)}
+            </ul>
+          )}
+          {children}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Renders loading / error states for a useAsync() result, otherwise children(data).
+ * While reloading with data already on screen, keeps showing the data.
+ */
+export function AsyncView({ state, children, loadingLabel, errorTitle, card = false }) {
+  const wrap = (node) => (card ? <Card>{node}</Card> : node)
+  if (state.error) return wrap(<ErrorState error={state.error} onRetry={state.reload} title={errorTitle} />)
+  if (state.loading && state.data === undefined) return wrap(<LoadingState label={loadingLabel} />)
+  if (state.data === undefined) return null
+  return children(state.data)
 }

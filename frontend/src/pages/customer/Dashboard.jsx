@@ -1,20 +1,20 @@
 import { Link } from 'react-router-dom'
-import { Wallet, PiggyBank, CreditCard, TrendingUp, ArrowRight, ArrowLeftRight, Plus } from 'lucide-react'
-import { PageHeader, Card, StatCard, Sparkline, CategoryBars, StatusBadge } from '../../components/ui/Primitives.jsx'
-import { accounts, transactions, spendingByCategory, balanceTrend, currentUser } from '../../data/mockData.js'
-import { formatCurrency, formatSigned, formatDate } from '../../lib/format.js'
-
-const typeIcon = { Checking: Wallet, Savings: PiggyBank, Credit: CreditCard }
+import { Wallet, TrendingUp, ArrowRight, ArrowLeftRight, Plus, ArrowDownLeft, ArrowUpRight, Receipt } from 'lucide-react'
+import { accountTypeIcon as typeIcon } from '../../lib/accountTypes.js'
+import { PageHeader, Card, StatCard, Sparkline, CategoryBars, StatusBadge, AsyncView, EmptyState } from '../../components/ui/Primitives.jsx'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { useAsync } from '../../lib/useAsync.js'
+import { getCustomerOverview } from '../../services/dashboardService.js'
+import { formatCurrency, formatTxnAmount, formatDate } from '../../lib/format.js'
 
 export default function Dashboard() {
-  const netWorth = accounts.reduce((sum, a) => sum + a.balance, 0)
-  const totalSpent = spendingByCategory.reduce((s, c) => s + c.amount, 0)
-  const recent = transactions.slice(0, 6)
+  const { user } = useAuth()
+  const state = useAsync(() => getCustomerOverview(user), [user?.userId])
 
   return (
     <>
       <PageHeader
-        title={`Welcome back, ${currentUser.name.split(' ')[0]}`}
+        title={`Welcome back, ${(user?.name || '').split(' ')[0]}`}
         subtitle="Here's what's happening across your accounts."
         action={
           <Link to="/transfer" className="btn-primary">
@@ -23,12 +23,40 @@ export default function Dashboard() {
         }
       />
 
+      <AsyncView state={state} card loadingLabel="Loading your accounts…" errorTitle="Couldn't load your overview">
+        {(data) => <Overview data={data} />}
+      </AsyncView>
+    </>
+  )
+}
+
+function Overview({ data }) {
+  const { accounts, transactions, currency, total, moneyIn, moneyOut, spending, trend } = data
+  const fmt = (v) => formatCurrency(v, currency)
+  const recent = transactions.slice(0, 6)
+  const totalSpent = spending.reduce((s, c) => s + c.amount, 0)
+
+  if (accounts.length === 0) {
+    return (
+      <Card>
+        <EmptyState
+          icon={Wallet}
+          title="You don't have any accounts yet"
+          message="Open your first account to start banking with Meridian."
+          action={<Link to="/accounts" className="btn-primary"><Plus size={16} /> Open an account</Link>}
+        />
+      </Card>
+    )
+  }
+
+  return (
+    <>
       {/* Top stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Net worth" value={formatCurrency(netWorth)} icon={TrendingUp} tone="brand" delta={{ up: true, label: '2.4% this month' }} />
-        <StatCard label="Checking" value={formatCurrency(accounts[0].balance)} icon={Wallet} tone="slate" />
-        <StatCard label="Savings" value={formatCurrency(accounts[1].balance)} icon={PiggyBank} tone="green" delta={{ up: true, label: `${accounts[1].apy}% APY` }} />
-        <StatCard label="Card balance" value={formatCurrency(Math.abs(accounts[2].balance))} icon={CreditCard} tone="amber" />
+        <StatCard label="Total balance" value={fmt(total)} icon={TrendingUp} tone="brand" />
+        <StatCard label="Accounts" value={accounts.length} icon={Wallet} tone="slate" />
+        <StatCard label="Money in (30d)" value={fmt(moneyIn)} icon={ArrowDownLeft} tone="green" />
+        <StatCard label="Money out (30d)" value={fmt(moneyOut)} icon={ArrowUpRight} tone="amber" />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -37,22 +65,28 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-semibold text-slate-900">Total balance</h2>
-              <p className="text-2xl font-bold text-slate-900 mt-1">{formatCurrency(netWorth)}</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{fmt(total)}</p>
             </div>
-            <span className="text-xs font-medium text-emerald-600">▲ 12-week trend</span>
+            <span className="text-xs font-medium text-slate-500">12-week trend</span>
           </div>
           <div className="mt-4">
-            <Sparkline data={balanceTrend} height={120} />
+            <Sparkline data={trend} height={120} />
           </div>
         </Card>
 
         {/* Spending */}
         <Card className="p-5">
           <h2 className="font-semibold text-slate-900">Spending this month</h2>
-          <p className="text-sm text-slate-500">{formatCurrency(totalSpent)} across {spendingByCategory.length} categories</p>
-          <div className="mt-4">
-            <CategoryBars items={spendingByCategory} format={formatCurrency} />
-          </div>
+          {spending.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">No money went out in the last 30 days.</p>
+          ) : (
+            <>
+              <p className="text-sm text-slate-500">{fmt(totalSpent)} across {spending.length} categories</p>
+              <div className="mt-4">
+                <CategoryBars items={spending} format={fmt} />
+              </div>
+            </>
+          )}
         </Card>
       </div>
 
@@ -72,15 +106,15 @@ export default function Dashboard() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-slate-800">{acc.name}</p>
-                  <p className="text-xs text-slate-500">{acc.number}</p>
+                  <p className="text-xs text-slate-500">{acc.number}{acc.status !== 'Active' ? ` · ${acc.status}` : ''}</p>
                 </div>
                 <p className={`text-sm font-bold ${acc.balance < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
-                  {formatCurrency(acc.balance)}
+                  {formatCurrency(acc.balance, acc.currency)}
                 </p>
               </Link>
             )
           })}
-          <Link to="/accounts" className="btn-ghost w-full">
+          <Link to="/accounts?open=1" className="btn-ghost w-full">
             <Plus size={16} /> Open new account
           </Link>
         </div>
@@ -93,25 +127,29 @@ export default function Dashboard() {
               See all <ArrowRight size={14} />
             </Link>
           </div>
-          <ul className="divide-y divide-slate-100">
-            {recent.map((t) => (
-              <li key={t.id} className="flex items-center gap-4 px-5 py-3">
-                <div className={`grid h-9 w-9 place-items-center rounded-full text-sm font-bold ${t.amount > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
-                  {t.amount > 0 ? '↓' : '↑'}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-800">{t.description}</p>
-                  <p className="text-xs text-slate-500">{t.category} · {formatDate(t.date)}</p>
-                </div>
-                <div className="text-right">
-                  <p className={`text-sm font-semibold ${t.amount > 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
-                    {formatSigned(t.amount)}
-                  </p>
-                  <StatusBadge status={t.status} />
-                </div>
-              </li>
-            ))}
-          </ul>
+          {recent.length === 0 ? (
+            <EmptyState icon={Receipt} title="No activity yet" message="Transfers and deposits will show up here." />
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {recent.map((t) => (
+                <li key={t.id} className="flex items-center gap-4 px-5 py-3">
+                  <div className={`grid h-9 w-9 place-items-center rounded-full text-sm font-bold ${t.type === 'credit' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+                    {t.type === 'credit' ? '↓' : t.type === 'internal' ? '⇄' : '↑'}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-800">{t.description}</p>
+                    <p className="text-xs text-slate-500">{t.category} · {formatDate(t.date)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-sm font-semibold ${t.type === 'credit' ? 'text-emerald-600' : 'text-slate-800'}`}>
+                      {formatTxnAmount(t)}
+                    </p>
+                    <StatusBadge status={t.status} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </div>
     </>

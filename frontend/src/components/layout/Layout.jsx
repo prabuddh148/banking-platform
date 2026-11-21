@@ -1,5 +1,5 @@
 import { Outlet } from 'react-router-dom'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, AlertTriangle } from 'lucide-react'
 import Sidebar from './Sidebar.jsx'
 import Topbar from './Topbar.jsx'
 import { useApp } from '../../context/AppContext.jsx'
@@ -21,8 +21,10 @@ export default function Layout() {
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-lg bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-lg animate-fade-in">
-          <CheckCircle2 size={18} className="text-emerald-400" />
+        <div key={toast.id} role="status" className="fixed bottom-6 right-6 z-50 flex max-w-sm items-center gap-2.5 rounded-lg bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-lg animate-fade-in">
+          {toast.tone === 'error'
+            ? <AlertTriangle size={18} className="shrink-0 text-rose-400" />
+            : <CheckCircle2 size={18} className="shrink-0 text-emerald-400" />}
           {toast.message}
         </div>
       )}

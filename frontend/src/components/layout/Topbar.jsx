@@ -1,21 +1,24 @@
 import { useNavigate } from 'react-router-dom'
-import { Bell, Search, ChevronDown } from 'lucide-react'
+import { Bell, Search, LogOut } from 'lucide-react'
 import { useApp } from '../../context/AppContext.jsx'
-import { currentUser, adminUser } from '../../data/mockData.js'
+import { useAuth } from '../../context/AuthContext.jsx'
 
-function initials(name) {
-  return name.split(' ').map((p) => p[0]).slice(0, 2).join('')
+function initials(name = '') {
+  return name.split(' ').filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase() || '?'
 }
 
 export default function Topbar() {
-  const { role, toggleRole, unreadCount } = useApp()
+  const { role, unreadCount } = useApp()
+  const { user, isAdmin, logout } = useAuth()
   const navigate = useNavigate()
-  const user = role === 'admin' ? adminUser : currentUser
 
-  function handleToggle() {
-    const next = role === 'customer' ? 'admin' : 'customer'
-    toggleRole()
-    navigate(next === 'admin' ? '/admin' : '/')
+  function switchTo(next) {
+    if (next !== role) navigate(next === 'admin' ? '/admin' : '/')
+  }
+
+  function handleLogout() {
+    logout()
+    navigate('/login', { replace: true })
   }
 
   return (
@@ -27,25 +30,22 @@ export default function Topbar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2 sm:gap-3">
-        {/* Role switch */}
-        <div className="flex items-center rounded-lg bg-slate-100 p-0.5 text-xs font-semibold">
-          <button
-            onClick={role !== 'customer' ? handleToggle : undefined}
-            className={`rounded-md px-3 py-1.5 transition-colors ${
-              role === 'customer' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Customer
-          </button>
-          <button
-            onClick={role !== 'admin' ? handleToggle : undefined}
-            className={`rounded-md px-3 py-1.5 transition-colors ${
-              role === 'admin' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Admin
-          </button>
-        </div>
+        {/* Role switch — only admins have both shells */}
+        {isAdmin && (
+          <div className="flex items-center rounded-lg bg-slate-100 p-0.5 text-xs font-semibold">
+            {['customer', 'admin'].map((r) => (
+              <button
+                key={r}
+                onClick={() => switchTo(r)}
+                className={`rounded-md px-3 py-1.5 capitalize transition-colors ${
+                  role === r ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Notifications */}
         <button
@@ -56,22 +56,25 @@ export default function Topbar() {
           <Bell size={19} />
           {role === 'customer' && unreadCount > 0 && (
             <span className="absolute right-1.5 top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
-              {unreadCount}
+              {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           )}
         </button>
 
         {/* User */}
-        <div className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 hover:bg-slate-100">
+        <div className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2">
           <div className="grid h-8 w-8 place-items-center rounded-full bg-brand-600 text-xs font-bold text-white">
-            {initials(user.name)}
+            {initials(user?.name)}
           </div>
           <div className="hidden text-left leading-tight sm:block">
-            <p className="text-sm font-semibold text-slate-800">{user.name}</p>
-            <p className="text-[11px] text-slate-500">{role === 'admin' ? user.role : user.tier}</p>
+            <p className="text-sm font-semibold text-slate-800">{user?.name}</p>
+            <p className="text-[11px] text-slate-500">{isAdmin ? 'Administrator' : 'Customer'} · {user?.userId}</p>
           </div>
-          <ChevronDown size={16} className="hidden text-slate-400 sm:block" />
         </div>
+
+        <button onClick={handleLogout} className="btn-ghost px-3" title="Sign out">
+          <LogOut size={16} /> <span className="hidden sm:inline">Sign out</span>
+        </button>
       </div>
     </header>
   )

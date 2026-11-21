@@ -1,36 +1,83 @@
 // Small formatting helpers shared across pages.
+import { DEFAULT_CURRENCY } from './config.js'
 
-export function formatCurrency(value, currency = 'USD') {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value)
+function localeFor(currency) {
+  return currency === 'INR' ? 'en-IN' : 'en-US'
+}
+
+export function formatCurrency(value, currency = DEFAULT_CURRENCY) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—'
+  const code = currency || DEFAULT_CURRENCY
+  try {
+    return new Intl.NumberFormat(localeFor(code), {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number(value))
+  } catch {
+    // Unknown currency code: fall back to "1,234.00 XYZ"
+    return `${Number(value).toFixed(2)} ${code}`
+  }
 }
 
 // Signed currency: keeps the leading sign for +/- amounts (transaction rows).
-export function formatSigned(value, currency = 'USD') {
-  const sign = value > 0 ? '+' : value < 0 ? '−' : ''
-  return `${sign}${formatCurrency(Math.abs(value), currency)}`
+export function formatSigned(value, currency = DEFAULT_CURRENCY) {
+  const n = Number(value) || 0
+  const sign = n > 0 ? '+' : n < 0 ? '−' : ''
+  return `${sign}${formatCurrency(Math.abs(n), currency)}`
+}
+
+// Transaction amount as shown in lists: moves between your own accounts are unsigned.
+export function formatTxnAmount(t) {
+  if (t.type === 'internal') return formatCurrency(Math.abs(t.amount), t.currency)
+  return formatSigned(t.amount, t.currency)
+}
+
+// Symbol for a currency code (e.g. INR -> ₹), used as an input prefix.
+export function currencySymbol(currency = DEFAULT_CURRENCY) {
+  try {
+    const part = new Intl.NumberFormat(localeFor(currency), { style: 'currency', currency })
+      .formatToParts(0)
+      .find((p) => p.type === 'currency')
+    return part?.value || currency
+  } catch {
+    return currency
+  }
+}
+
+function toDate(dateStr) {
+  if (!dateStr) return null
+  const d = new Date(dateStr)
+  return Number.isNaN(d.getTime()) ? null : d
 }
 
 export function formatDate(dateStr, opts) {
-  const d = new Date(dateStr)
+  const d = toDate(dateStr)
+  if (!d) return '—'
   return d.toLocaleDateString('en-US', opts || { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 export function formatTime(dateStr) {
-  const d = new Date(dateStr)
+  const d = toDate(dateStr)
+  if (!d) return '—'
   return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
 }
 
+export function formatDateTime(dateStr) {
+  const d = toDate(dateStr)
+  if (!d) return '—'
+  return `${formatDate(dateStr, { month: 'short', day: 'numeric' })}, ${formatTime(dateStr)}`
+}
+
 export function formatNumber(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—'
   return new Intl.NumberFormat('en-US').format(value)
 }
 
 export function relativeTime(dateStr) {
-  const d = new Date(dateStr)
+  const d = toDate(dateStr)
+  if (!d) return '—'
   const diffMs = Date.now() - d.getTime()
   const mins = Math.round(diffMs / 60000)
   if (mins < 1) return 'just now'

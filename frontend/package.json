@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Unified customer + admin frontend for the banking platform (mock data)",
+  "description": "Unified customer + admin React frontend for the banking platform, talking to the API gateway (optional mock mode via VITE_USE_MOCK)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
