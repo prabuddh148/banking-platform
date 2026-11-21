@@ -2,33 +2,125 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------------------------------------------------------------------------
+   Chart tokens (dataviz reference palette). Charts reference roles, never hex:
+   var(--series-1) ... var(--series-8), status colors, grid/axis ink.
+   Dark values are their own validated steps, not an automatic inversion.
+   --------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+  --series-1: #2a78d6; /* blue    */
+  --series-2: #eb6834; /* orange  */
+  --series-3: #1baf7a; /* aqua    */
+  --series-4: #eda100; /* yellow  */
+  --series-5: #e87ba4; /* magenta */
+  --series-6: #008300; /* green   */
+  --series-7: #6250d6; /* violet  */
+  --series-8: #e34948; /* red     */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
+  --chart-grid: #e1e0d9;
+  --chart-axis: #c3c2b7;
+  --chart-muted: #898781;
+  --chart-surface: #ffffff;
+}
+:root.dark {
+  color-scheme: dark;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #0ca30c;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --chart-grid: #2c2c2a;
+  --chart-axis: #383835;
+  --chart-muted: #898781;
+  --chart-surface: #161a25;
+}
+
 @layer base {
   html {
     -webkit-font-smoothing: antialiased;
   }
   body {
-    @apply bg-slate-100 text-slate-800 font-sans;
+    @apply bg-slate-50 text-slate-800 font-sans dark:bg-ink-950 dark:text-slate-200;
+  }
+  ::selection {
+    @apply bg-brand-500/20;
   }
 }
 
 @layer components {
   .card {
-    @apply bg-white rounded-xl border border-slate-200 shadow-sm;
+    @apply rounded-2xl border border-slate-200/80 bg-white shadow-soft dark:border-white/[0.07] dark:bg-ink-900 dark:shadow-none;
+  }
+  .card-hover {
+    @apply transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lift dark:hover:border-white/[0.14];
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-50 dark:focus-visible:ring-offset-ink-950;
   }
   .btn-primary {
-    @apply btn bg-brand-600 text-white hover:bg-brand-700 focus:ring-brand-500;
+    @apply btn bg-brand-600 text-white shadow-sm shadow-brand-600/30 hover:bg-brand-700 active:scale-[0.98];
   }
   .btn-ghost {
-    @apply btn bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 focus:ring-brand-500;
+    @apply btn border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 dark:hover:bg-white/[0.07];
+  }
+  .btn-danger {
+    @apply btn bg-rose-600 text-white hover:bg-rose-700 active:scale-[0.98];
+  }
+  .btn-success {
+    @apply btn bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.98];
+  }
+  .btn-icon {
+    @apply grid h-9 w-9 place-items-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/[0.07] dark:hover:text-white;
   }
   .input {
-    @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none;
+    @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 transition-colors focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100 dark:placeholder-slate-500;
   }
   .label {
-    @apply block text-sm font-medium text-slate-600 mb-1.5;
+    @apply mb-1.5 block text-sm font-medium text-slate-600 dark:text-slate-300;
+  }
+  .muted {
+    @apply text-slate-500 dark:text-slate-400;
+  }
+  .heading {
+    @apply text-slate-900 dark:text-white;
+  }
+  .divider {
+    @apply border-slate-100 dark:border-white/[0.06];
+  }
+  /* Table styling shared by list pages */
+  .table-base {
+    @apply w-full text-left text-sm;
+  }
+  .table-base thead th {
+    @apply whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400;
+  }
+  .table-base tbody tr {
+    @apply border-t border-slate-100 transition-colors hover:bg-slate-50/80 dark:border-white/[0.05] dark:hover:bg-white/[0.03];
+  }
+  .table-base tbody td {
+    @apply px-4 py-3;
+  }
+  .kbd {
+    @apply inline-flex h-5 min-w-5 items-center justify-center rounded border border-slate-200 bg-slate-50 px-1 font-mono text-[10px] font-medium text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, rgba(148, 163, 184, 0.12) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(148, 163, 184, 0.12) 1px, transparent 1px);
+    background-size: 32px 32px;
   }
 }
 
@@ -38,8 +130,24 @@
   height: 6px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  @apply bg-slate-300 rounded-full;
+  @apply rounded-full bg-slate-300 dark:bg-white/15;
 }
 .scrollbar-thin::-webkit-scrollbar-track {
   background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
 }

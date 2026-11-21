@@ -45,7 +45,7 @@ export function listAccounts() {
 }
 
 export function listAllAccounts() {
-  return delay(clone(db.adminAccounts.map((a) => ({ currency: 'USD', ...a }))))
+  return delay(clone(db.adminAccounts.map((a) => ({ currency: 'INR', ...a }))))
 }
 
 export function openAccount(form) {
@@ -76,12 +76,12 @@ export function setAccountStatus(id, status) {
   row.status = status
   const own = db.accounts.find((a) => a.id === id)
   if (own) own.status = status
-  return delay(clone({ currency: 'USD', ...row }))
+  return delay(clone({ currency: 'INR', ...row }))
 }
 
 // ---------------------------------------------------------------- transactions
 function withAccountIds(t) {
-  return { currency: 'USD', accountIds: [t.accountId], reference: t.id, ...t }
+  return { currency: 'INR', accountIds: [t.accountId], reference: t.id, ...t }
 }
 
 export function listTransactions() {
@@ -186,7 +186,7 @@ export function reviewFraudAlert(id, decision, notes) {
   const a = db.fraudAlerts.find((x) => x.id === id)
   if (!a) return delay(null).then(() => { throw new ApiError('Fraud alert not found', { code: 'FRAUD_ALERT_NOT_FOUND', status: 404 }) })
   a.status = decision === 'APPROVE' ? 'Approved' : 'Rejected'
-  a.reviewedBy = 'admin'
+  a.reviewedBy = 'ADMIN-1'
   a.reviewNotes = notes || null
   a.reviewedAt = new Date().toISOString()
   return delay(clone(a), 300)
@@ -215,7 +215,7 @@ export function adminOverview() {
       openFraud: db.fraudAlerts.filter((a) => a.status === 'Open').length,
       underReview: statusCounts['Under Review'] || 0,
     },
-    currency: 'USD',
+    currency: 'INR',
     hourlyVolume: clone(seed.platformTxnVolume),
     services: clone(db.services),
     openAlerts: clone(db.fraudAlerts.filter((a) => a.status === 'Open')),
@@ -232,3 +232,7 @@ export function balanceTrend() {
 export function spendingByCategory() {
   return clone(seed.spendingByCategory)
 }
+
+// Shared in-memory state, for feature-specific mock modules (src/services/mock/*Mock.js)
+// that need to read or change the same data as the functions above.
+export { db, clone, nextId }

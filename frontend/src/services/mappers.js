@@ -56,3 +56,32 @@ export function detailsToText(details) {
     return String(details)
   }
 }
+
+/* ------------------------------------------------------------------ transactions (customer views) */
+
+const STATUS_KEYS = {
+  Pending: 'PENDING', Processing: 'PROCESSING', 'Under Review': 'UNDER_REVIEW',
+  Completed: 'COMPLETED', Posted: 'COMPLETED', Failed: 'FAILED',
+}
+
+/**
+ * Backend status enum for a UI transaction. Real-API rows carry `rawStatus`;
+ * the bundled mock rows only have a label ('Posted' = settled), so map that.
+ */
+export function txnStatusKey(t) {
+  if (!t) return 'PENDING'
+  return t.rawStatus || STATUS_KEYS[t.status] || String(t.status || 'PENDING').toUpperCase().replace(/\s+/g, '_')
+}
+
+export const isFailedTxn = (t) => txnStatusKey(t) === 'FAILED'
+export const isSettledTxn = (t) => txnStatusKey(t) === 'COMPLETED'
+
+/**
+ * Payment rail shown as a badge (UPI / Card / NEFT / IMPS / NACH / Internal).
+ * The real API has no channel field, so fall back to the transaction type.
+ */
+export function txnChannel(t) {
+  if (t?.channel) return t.channel
+  if (t?.type === 'internal') return 'Internal'
+  return humanize(t?.transactionType) || 'Transfer'
+}

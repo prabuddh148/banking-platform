@@ -2,7 +2,7 @@
 import { api } from '../lib/api.js'
 import { API_V1, USE_MOCK } from '../lib/config.js'
 import { toNumber } from './mappers.js'
-import * as mock from './mock/mockStore.js'
+import * as adminMock from './mock/adminMock.js'
 
 // Spring Boot health status -> UI label used by StatusBadge.
 function statusLabel(status) {
@@ -12,6 +12,11 @@ function statusLabel(status) {
   if (s === 'DEGRADED') return 'Degraded'
   if (s === '') return 'Unknown'
   return s.charAt(0) + s.slice(1).toLowerCase()
+}
+
+function portOf(url) {
+  const m = /:(\d{2,5})(?:\/|$)/.exec(String(url || ''))
+  return m ? Number(m[1]) : null
 }
 
 function mapService(name, value) {
@@ -24,6 +29,8 @@ function mapService(name, value) {
     version: v.version || null,
     instances: toNumber(v.instances),
     url: v.url || v.uri || null,
+    port: toNumber(v.port) ?? portOf(v.url || v.uri),
+    history: Array.isArray(v.history) ? v.history : null,
     error: v.error || v.message || null,
   }
 }
@@ -49,6 +56,6 @@ export function mapHealth(data) {
 }
 
 export async function getSystemHealth() {
-  if (USE_MOCK) return mapHealth(await mock.getSystemHealth())
+  if (USE_MOCK) return mapHealth(await adminMock.getSystemHealth())
   return mapHealth(await api.get(`${API_V1}/system/health`))
 }

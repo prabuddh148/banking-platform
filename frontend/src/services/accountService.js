@@ -3,6 +3,7 @@ import { api, pageContent } from '../lib/api.js'
 import { API_V1, USE_MOCK } from '../lib/config.js'
 import { humanize, maskAccountNumber, toNumber, currencyOf, isAdminUser } from './mappers.js'
 import * as mock from './mock/mockStore.js'
+import * as customerMock from './mock/customerMock.js'
 
 const BASE = `${API_V1}/accounts`
 
@@ -30,6 +31,11 @@ export function mapAccount(dto) {
     customerId: dto.customerId,
     customerEmail: dto.customerEmail,
     opened: dto.createdAt || null,
+    // Optional extras: not in AccountResponse today, shown only when present.
+    interestRate: toNumber(dto.interestRate) ?? undefined,
+    ifsc: dto.ifsc || dto.ifscCode || undefined,
+    branch: dto.branch || undefined,
+    maturityDate: dto.maturityDate || undefined,
   }
 }
 
@@ -79,4 +85,21 @@ export async function freezeAccount(id, reason) {
 export async function unfreezeAccount(id, reason) {
   if (USE_MOCK) return mock.setAccountStatus(id, 'Active')
   return mapAccount(await api.post(`${BASE}/${id}/unfreeze`, { reason: reason || 'Unfrozen by admin' }))
+}
+
+/**
+ * Preview a payee before sending money: { id, name, number, type, status, own } or null.
+ * Real API: GET /accounts/{id} is owner/admin only, so another customer's account
+ * resolves to null (the transfer itself is still validated by the saga).
+ */
+export async function lookupAccount(id) {
+  if (!id) return null
+  if (USE_MOCK) return customerMock.lookupAccount(id)
+  try {
+    const acc = mapAccount(await api.get(`${BASE}/${encodeURIComponent(id)}`))
+    return { id: acc.id, name: acc.customer, number: acc.number, type: acc.type, status: acc.status, own: false }
+  } catch (err) {
+    if (err?.status === 403 || err?.status === 404 || err?.status === 400) return null
+    throw err
+  }
 }

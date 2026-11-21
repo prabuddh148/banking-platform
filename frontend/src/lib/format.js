@@ -55,13 +55,13 @@ function toDate(dateStr) {
 export function formatDate(dateStr, opts) {
   const d = toDate(dateStr)
   if (!d) return '—'
-  return d.toLocaleDateString('en-US', opts || { month: 'short', day: 'numeric', year: 'numeric' })
+  return d.toLocaleDateString('en-IN', opts || { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 export function formatTime(dateStr) {
   const d = toDate(dateStr)
   if (!d) return '—'
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
 }
 
 export function formatDateTime(dateStr) {
@@ -72,7 +72,7 @@ export function formatDateTime(dateStr) {
 
 export function formatNumber(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '—'
-  return new Intl.NumberFormat('en-US').format(value)
+  return new Intl.NumberFormat('en-IN').format(value)
 }
 
 export function relativeTime(dateStr) {
@@ -86,4 +86,36 @@ export function relativeTime(dateStr) {
   if (hrs < 24) return `${hrs}h ago`
   const days = Math.round(hrs / 24)
   return `${days}d ago`
+}
+
+// Alias used by newer components
+export const timeAgo = relativeTime
+
+/**
+ * Short money for KPI tiles and chart axes. INR uses lakh/crore (₹4.2L, ₹1.3Cr),
+ * other currencies K/M/B ($4.2K, $1.3M).
+ */
+export function formatCompactCurrency(value, currency = DEFAULT_CURRENCY) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '—'
+  const sym = currencySymbol(currency)
+  const abs = Math.abs(n)
+  const sign = n < 0 ? '−' : ''
+  const trim = (x) => (x >= 100 ? x.toFixed(0) : x.toFixed(1)).replace(/\.0$/, '')
+  if (currency === 'INR') {
+    if (abs >= 1e7) return `${sign}${sym}${trim(abs / 1e7)}Cr`
+    if (abs >= 1e5) return `${sign}${sym}${trim(abs / 1e5)}L`
+    if (abs >= 1e3) return `${sign}${sym}${trim(abs / 1e3)}K`
+    return `${sign}${sym}${Math.round(abs)}`
+  }
+  if (abs >= 1e9) return `${sign}${sym}${trim(abs / 1e9)}B`
+  if (abs >= 1e6) return `${sign}${sym}${trim(abs / 1e6)}M`
+  if (abs >= 1e3) return `${sign}${sym}${trim(abs / 1e3)}K`
+  return `${sign}${sym}${Math.round(abs)}`
+}
+
+/** "Good morning" / "Good afternoon" / "Good evening" for dashboard greetings. */
+export function greeting(date = new Date()) {
+  const h = date.getHours()
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
 }

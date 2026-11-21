@@ -1,29 +1,38 @@
+import { lazy } from 'react'
 import { Routes, Route, Navigate, Link } from 'react-router-dom'
 import Layout from './components/layout/Layout.jsx'
 import { RequireAuth, RequireAdmin } from './components/auth/RouteGuards.jsx'
 import Login from './pages/Login.jsx'
 
+// Pages are code-split: each one downloads the first time it is opened, so the
+// login screen loads fast. Layout wraps <Outlet/> in <Suspense>.
+
 // Customer
-import Dashboard from './pages/customer/Dashboard.jsx'
-import Accounts from './pages/customer/Accounts.jsx'
-import Transfer from './pages/customer/Transfer.jsx'
-import Transactions from './pages/customer/Transactions.jsx'
-import Notifications from './pages/customer/Notifications.jsx'
+const Dashboard = lazy(() => import('./pages/customer/Dashboard.jsx'))
+const Accounts = lazy(() => import('./pages/customer/Accounts.jsx'))
+const Transfer = lazy(() => import('./pages/customer/Transfer.jsx'))
+const Transactions = lazy(() => import('./pages/customer/Transactions.jsx'))
+const Notifications = lazy(() => import('./pages/customer/Notifications.jsx'))
 
 // Admin
-import AdminDashboard from './pages/admin/AdminDashboard.jsx'
-import AdminAccounts from './pages/admin/AdminAccounts.jsx'
-import AdminTransactions from './pages/admin/AdminTransactions.jsx'
-import FraudAlerts from './pages/admin/FraudAlerts.jsx'
-import AuditLog from './pages/admin/AuditLog.jsx'
-import ServiceHealth from './pages/admin/ServiceHealth.jsx'
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard.jsx'))
+const AdminAccounts = lazy(() => import('./pages/admin/AdminAccounts.jsx'))
+const AdminTransactions = lazy(() => import('./pages/admin/AdminTransactions.jsx'))
+const FraudAlerts = lazy(() => import('./pages/admin/FraudAlerts.jsx'))
+const AuditLog = lazy(() => import('./pages/admin/AuditLog.jsx'))
+const ServiceHealth = lazy(() => import('./pages/admin/ServiceHealth.jsx'))
+const EventStream = lazy(() => import('./pages/admin/EventStream.jsx'))
+
+// Platform
+const Architecture = lazy(() => import('./pages/Architecture.jsx'))
 
 function NotFound() {
   return (
     <div className="grid place-items-center py-24 text-center">
-      <p className="text-6xl font-black text-slate-200">404</p>
-      <p className="mt-2 text-lg font-semibold text-slate-700">Page not found</p>
-      <Link to="/" className="btn-primary mt-4">Back to overview</Link>
+      <p className="bg-gradient-to-br from-brand-500 to-violet-500 bg-clip-text text-7xl font-black text-transparent">404</p>
+      <p className="heading mt-2 text-lg font-semibold">Page not found</p>
+      <p className="muted mt-1 text-sm">The page you're looking for doesn't exist.</p>
+      <Link to="/" className="btn-primary mt-5">Back to overview</Link>
     </div>
   )
 }
@@ -43,12 +52,16 @@ export default function App() {
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/notifications" element={<Notifications />} />
 
+          {/* Platform (everyone) */}
+          <Route path="/architecture" element={<Architecture />} />
+
           {/* Admin (ROLE_ADMIN only) */}
           <Route element={<RequireAdmin />}>
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/accounts" element={<AdminAccounts />} />
             <Route path="/admin/transactions" element={<AdminTransactions />} />
             <Route path="/admin/fraud" element={<FraudAlerts />} />
+            <Route path="/admin/events" element={<EventStream />} />
             <Route path="/admin/audit" element={<AuditLog />} />
             <Route path="/admin/services" element={<ServiceHealth />} />
           </Route>

@@ -3,6 +3,7 @@ import { api, pageContent, newIdempotencyKey } from '../lib/api.js'
 import { API_V1, USE_MOCK } from '../lib/config.js'
 import { humanize, toNumber, currencyOf } from './mappers.js'
 import * as mock from './mock/mockStore.js'
+import * as customerMock from './mock/customerMock.js'
 
 const BASE = `${API_V1}/transactions`
 
@@ -96,8 +97,12 @@ export async function listAllTransactions({ status, type, accounts } = {}) {
   }
 }
 
-/** POST /transfer -> 202 TransactionResponse (status PENDING; the saga runs asynchronously). */
-export async function transfer({ sourceAccountId, destinationAccountId, amount, currency, description }) {
+/**
+ * POST /transfer -> 202 TransactionResponse (status PENDING; the saga runs asynchronously).
+ * Pass the same `idempotencyKey` when retrying one submission so it is never applied twice
+ * (a fresh key is generated when none is given).
+ */
+export async function transfer({ sourceAccountId, destinationAccountId, amount, currency, description, idempotencyKey }) {
   const body = {
     sourceAccountId,
     destinationAccountId,
@@ -105,8 +110,15 @@ export async function transfer({ sourceAccountId, destinationAccountId, amount, 
     currency: currency || 'INR',
     description: description || undefined,
   }
-  if (USE_MOCK) return mock.transfer(body)
-  return api.post(`${BASE}/transfer`, body, { headers: { 'Idempotency-Key': newIdempotencyKey() } })
+  if (USE_MOCK) return customerMock.transfer(body)
+  return api.post(`${BASE}/transfer`, body, { headers: { 'Idempotency-Key': idempotencyKey || newIdempotencyKey() } })
+}
+
+/** POST /deposit -> 202 TransactionResponse ("Add money"; runs through the same saga, minus the source checks). */
+export async function deposit({ accountId, amount, currency, description, idempotencyKey }) {
+  const body = { accountId, amount: Number(amount), currency: currency || 'INR', description: description || undefined }
+  if (USE_MOCK) return customerMock.deposit(body)
+  return api.post(`${BASE}/deposit`, body, { headers: { 'Idempotency-Key': idempotencyKey || newIdempotencyKey() } })
 }
 
 /** GET /{id}/status -> { transactionId, reference, status, failureReason, history[] } */

@@ -8,7 +8,8 @@ const AppContext = createContext(null)
 // Holds the pieces of UI state shared across the app:
 //  - role: which shell we're in ('customer' | 'admin'), derived from the URL
 //  - notifications: so the topbar badge and the notifications page stay in sync
-//  - a lightweight toast for actions like "Transfer submitted"
+//  - a stack of toasts for actions like "Transfer submitted"
+//  - open/closed state of the command palette (Ctrl+K) and the mobile nav drawer
 export function AppProvider({ children }) {
   const { user } = useAuth()
   const location = useLocation()
@@ -17,13 +18,38 @@ export function AppProvider({ children }) {
   const [notifications, setNotifications] = useState([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
   const [notificationsError, setNotificationsError] = useState(null)
-  const [toast, setToast] = useState(null)
-  const toastTimer = useRef(null)
+  const [toasts, setToasts] = useState([])
+  const toastSeq = useRef(0)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
-  const showToast = useCallback((message, tone = 'success') => {
-    clearTimeout(toastTimer.current)
-    setToast({ message, tone, id: Date.now() })
-    toastTimer.current = setTimeout(() => setToast(null), 3600)
+  const dismissToast = useCallback((id) => setToasts((list) => list.filter((t) => t.id !== id)), [])
+
+  /**
+   * showToast('Transfer submitted')                       -> success
+   * showToast('Could not freeze', 'error')                -> error
+   * showToast({ title, description, tone: 'info' })       -> richer toast
+   */
+  const showToast = useCallback((messageOrOptions, tone = 'success') => {
+    const opts = typeof messageOrOptions === 'string' ? { title: messageOrOptions, tone } : { tone: 'success', ...messageOrOptions }
+    const id = ++toastSeq.current
+    setToasts((list) => [...list.slice(-3), { id, ...opts }])
+    setTimeout(() => setToasts((list) => list.filter((t) => t.id !== id)), opts.duration || 4200)
+  }, [])
+
+  // Close the mobile drawer whenever the route changes
+  useEffect(() => setMobileNavOpen(false), [location.pathname])
+
+  // Ctrl/Cmd + K opens the command palette from anywhere
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen((o) => !o)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   const refreshNotifications = useCallback(async () => {
@@ -69,8 +95,13 @@ export function AppProvider({ children }) {
     unreadCount,
     markAllRead,
     markRead,
-    toast,
+    toasts,
     showToast,
+    dismissToast,
+    paletteOpen,
+    setPaletteOpen,
+    mobileNavOpen,
+    setMobileNavOpen,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
