@@ -60,7 +60,7 @@ PatternAnomalyRule (average of the last 20 amounts per account).
 
 | Table | Purpose | Key columns |
 |-------|---------|-------------|
-| `notifications` | One row per message to send | `id`, `recipient_id`, `recipient_email`, `recipient_phone`, `channel` (EMAIL/SMS/PUSH), `type`, `status` (PENDING/SENT/FAILED), `subject`, `message`, `attempts`, `error_message`, `source_event_id`, `created_at`, `sent_at`, `read_at` |
+| `notifications` | One row per message to send | `id`, `recipient_id`, `channel` (EMAIL/SMS/PUSH), `type`, `status` (PENDING/SENT/FAILED), `recipient_address`, `subject`, `message`, `html_body`, `reference_id`, `event_id`, `attempts`, `error_message`, `created_at`, `updated_at`, `last_attempt_at`, `sent_at`, `read_at` |
 | `account_contacts` | Local copy of contact details from `ACCOUNT_CREATED` (and status changes), one row per account | `account_id` (PK), `account_number`, `customer_id` (indexed), `customer_name`, `email`, `phone`, `created_at`, `updated_at` |
 | `processed_events` | Consumer idempotency | `event_id` (PK), `event_type`, `processed_at` |
 
