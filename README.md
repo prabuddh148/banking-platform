@@ -1,5 +1,16 @@
 # Meridian Banking Platform
 
+[![CI](https://github.com/prabuddh148/banking-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/prabuddh148/banking-platform/actions/workflows/ci.yml)
+![Java 21](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
+![Spring Boot 3.3](https://img.shields.io/badge/Spring%20Boot-3.3.4-6DB33F?logo=springboot)
+![Kafka](https://img.shields.io/badge/Kafka-saga%20%2B%20outbox-231F20?logo=apachekafka)
+![Tests](https://img.shields.io/badge/tests-193%20passing-brightgreen)
+![Coverage](https://img.shields.io/badge/line%20coverage-70%25-yellowgreen)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Live demo](https://img.shields.io/badge/demo-live-8A2BE2)](https://prabuddh148.github.io/banking-platform/)
+
+**Event-driven banking backend: 6 Spring Boot services that move money through a Kafka saga, using a transactional outbox, idempotent consumers and deadlock-free row locking.**
+
 A banking backend built as **Spring Boot microservices**, with a React frontend. Customers open
 accounts and move money (deposit, withdraw, transfer). Every money movement goes through an
 **event-driven saga** on Kafka: fraud check → balance update → notification → audit.
@@ -12,6 +23,44 @@ and test everything. Deeper write-ups live in [`docs/`](docs/).
 (demo data in the browser, no backend). Log in as `rahul` / `password` (customer) or `admin` / `admin123` (admin).
 
 > Learning project. Not a real bank. Do not use with real money or real personal data.
+
+### At a glance
+
+| | |
+|---|---|
+| **Run it** | `cd docker && docker compose up -d --build` (then open http://localhost:8080). See [§5](#5-quick-start) |
+| **Tests** | 193 JUnit 5 tests, ~70% line coverage (JaCoCo), run by [CI](.github/workflows/ci.yml) on every push. See [§21](#21-testing) |
+| **Load test** | k6, 114 req/s sustained, 0% errors, API p95 < 8 ms, 2,500+ transfers with 100% saga completion. See [§21.1](#211-load-test-k6) |
+| **Design notes** | [Why these design decisions](#design-decisions-in-short) · ADRs in [`docs/adr/`](docs/adr/) |
+
+### Screenshots
+
+These come from the live demo, which runs in mock mode.
+
+| Customer dashboard | Send money (the saga explained on the right) |
+|---|---|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Transfer](docs/screenshots/transfer.png) |
+| **Admin: fraud review** (risk score, triggered rules, saga timeline) | **Admin: live Kafka event stream** |
+| ![Fraud review](docs/screenshots/fraud-review.png) | ![Event stream](docs/screenshots/event-stream.png) |
+
+<details><summary>Login page</summary>
+
+![Login](docs/screenshots/login.png)
+
+</details>
+
+### Design decisions in short
+
+| Decision | Why | Cost we accept | ADR |
+|---|---|---|---|
+| **Orchestrated saga** (transaction-service drives every step) instead of choreography | The whole flow of a transfer lives in one class (`TransactionSagaOrchestrator`) and one `saga_states` row, so it is easy to read, test, time out and debug | transaction-service knows about every step | [0002](docs/adr/0002-saga-orchestration.md) |
+| **Transactional outbox** instead of `kafkaTemplate.send()` inside the business transaction | The DB change and its event are written in **one** DB transaction. A relay (`OutboxEventRelay`, `FOR UPDATE SKIP LOCKED`) publishes them later. If the service crashes, events are delayed but never lost and never published for a rolled-back change | At-least-once delivery, so every consumer must be idempotent. Adds latency (relay poll interval) | [0003](docs/adr/0003-outbox-pattern.md) |
+| **Idempotent consumers** (`processed_events` / `processed_transactions`) | Kafka redelivers and the outbox may publish twice. A unique row per event or transaction id makes a duplicate a no-op | One extra insert per message | [0003](docs/adr/0003-outbox-pattern.md) |
+| **Lock balance rows in id order** (`SELECT … FOR UPDATE`, sorted by account id) | A→B and B→A transfers at the same time would deadlock if each locked its source first. A single global order makes that impossible. Pessimistic locks also mean no lost updates | Transfers on the same account run one after another | [0002](docs/adr/0002-saga-orchestration.md) |
+| **Idempotency-Key header** + unique index `(initiated_by, idempotency_key)` | A client that retries a timed-out `POST /transfer` gets the same transaction back, not a second debit | Keys are stored forever (no TTL yet) | – |
+| **Dead-letter topics** (`DeadLetterPublishingRecoverer`, `<topic>.DLT`) | A poison message is retried, then parked, so it doesn't block its partition | Someone must look at the DLT ([runbook](docs/runbooks/dlq-reprocessing.md)) | [0001](docs/adr/0001-use-kafka-for-async.md) |
+| **Database per service** | Services can't couple through tables. Each owns its schema via Flyway | No cross-service joins. Data is shared only through events | [0004](docs/adr/0004-postgresql-per-service.md) |
+| **Gateway issues JWT, every service re-validates it** | Defense in depth: a service reached without the gateway still rejects bad tokens | Shared HS256 secret across services | [0005](docs/adr/0005-jwt-authentication.md) |
 
 ---
 
@@ -37,7 +86,7 @@ and test everything. Deeper write-ups live in [`docs/`](docs/).
 18. [Docker and infrastructure](#18-docker-and-infrastructure)
 19. [Observability](#19-observability)
 20. [Frontend](#20-frontend)
-21. [Testing](#21-testing)
+21. [Testing](#21-testing) (and the [k6 load test](#211-load-test-k6))
 22. [End-to-end walkthrough with curl](#22-end-to-end-walkthrough-with-curl)
 23. [Known limitations](#23-known-limitations)
 24. [Troubleshooting](#24-troubleshooting)
@@ -186,6 +235,8 @@ banking-platform/
 │         │     db/migration/V1__*.sql          (Flyway)
 │         └── test/java/...                     (unit, web-slice and schema tests)
 ├── frontend/                    React + Vite customer & admin UI
+├── load-tests/k6/meridian.js    k6 load test (smoke / load / stress profiles)
+├── .github/workflows/           CI (mvn verify + frontend build), GitHub Pages demo deploy
 ├── docker/
 │   ├── docker-compose.yml       full stack (infra + 6 services)
 │   ├── docker-compose.dev.yml   infra only (run services from IDE/Maven)
@@ -212,14 +263,15 @@ banking-platform/
 - Docker Desktop with Compose v2 (for Postgres, Kafka, etc.)
 - Node.js 18+ (frontend)
 
-### Option A: everything in Docker
+### Option A: everything in Docker (2 commands)
 
 ```bash
 cd docker
-cp .env.example .env            # optional: change ports/passwords
 docker compose up -d --build    # first build downloads Maven deps, takes a while
-docker compose ps               # wait until every container is "healthy"
 ```
+
+`docker compose ps` shows when every container is "healthy". Optional: `cp .env.example .env`
+first to change ports or passwords.
 
 ### Option B: infra in Docker, services from Maven/IDE (best for development)
 
@@ -716,12 +768,40 @@ stuck in `AWAITING_FRAUD_CHECK` or `AWAITING_BALANCE_UPDATE` for longer than `sa
 transaction, the service logs `RECONCILIATION NEEDED` at ERROR level and writes an audit row (the
 status is not changed). See [`docs/runbooks/saga-stuck-recovery.md`](docs/runbooks/saga-stuck-recovery.md).
 
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING: POST /transfer (202)
+    PENDING --> PROCESSING: FRAUD_CLEARED (APPROVE)
+    PENDING --> UNDER_REVIEW: FRAUD_DETECTED (REVIEW)
+    PENDING --> FAILED: FRAUD_DETECTED (BLOCK)
+    PENDING --> FAILED: saga timeout
+    UNDER_REVIEW --> PROCESSING: admin APPROVE
+    UNDER_REVIEW --> FAILED: admin REJECT
+    PROCESSING --> COMPLETED: BALANCE_UPDATED
+    PROCESSING --> FAILED: BALANCE_UPDATE_FAILED
+    PROCESSING --> FAILED: saga timeout
+    COMPLETED --> [*]
+    FAILED --> [*]
 ```
-PENDING ──fraud APPROVE──► PROCESSING ──BALANCE_UPDATED──► COMPLETED
-   │  └──fraud REVIEW──► UNDER_REVIEW ──admin APPROVE──► PROCESSING
-   │                          └──────admin REJECT──► FAILED
-   ├──fraud BLOCK──► FAILED
-   └──timeout──► FAILED            PROCESSING ──BALANCE_UPDATE_FAILED / timeout──► FAILED
+
+The same flow as messages between services:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant T as transaction-service
+    participant F as fraud-service
+    participant A as account-service
+    participant N as notification / audit
+    C->>T: POST /transactions/transfer
+    T-->>C: 202 Accepted (PENDING)
+    T->>F: TRANSACTION_INITIATED (outbox → Kafka)
+    F->>T: FRAUD_CLEARED
+    T->>A: BALANCE_UPDATE_REQUESTED (outbox → Kafka)
+    Note over A: lock both rows in id order,<br/>debit + credit in one DB transaction
+    A->>T: BALANCE_UPDATED (outbox → Kafka)
+    T->>N: TRANSACTION_COMPLETED
 ```
 
 ---
@@ -1362,17 +1442,19 @@ mvn -pl fraud-service verify        # one module
 mvn -pl account-service test -Dtest=SchemaValidationTest
 ```
 
-| Module | Tests | What they cover |
-|---|---|---|
-| common-library | 6 | masking, money math, IBAN/currency, JWT round-trip/expiry/tampering, response wrappers |
-| account-service | 34 | lifecycle, transfers incl. lock order, insufficient funds, frozen, wrong owner, currency mismatch, re-delivery, holds; controller security/validation; schema |
-| transaction-service | 33 | service + saga (happy path, fraud block, review, balance failure, timeout, duplicate event); controller; schema |
-| fraud-service | 36 | every rule, score/level/decision mapping, clear/review/block/duplicate/review flow; schema |
-| notification-service | 32 | event → notifications, failures, retries, ownership, controller, every email template; schema |
-| audit-service | 35 | recording, severity, masking, duplicates, summary, admin-only access; schema |
-| api-gateway | 17 | full app with WebTestClient: login, bad password, 401s, `/me`, fallback 503, system health, CORS, trace id; RouteValidator |
+| Module | Tests | Line coverage | What they cover |
+|---|---|---|---|
+| common-library | 6 | 56.5% | masking, money math, IBAN/currency, JWT round-trip/expiry/tampering, response wrappers |
+| account-service | 34 | 69.7% | lifecycle, transfers incl. lock order, insufficient funds, frozen, wrong owner, currency mismatch, re-delivery, holds; controller security/validation; schema |
+| transaction-service | 33 | 69.6% | service + saga (happy path, fraud block, review, balance failure, timeout, duplicate event); controller; schema |
+| fraud-service | 36 | 64.5% | every rule, score/level/decision mapping, clear/review/block/duplicate/review flow; schema |
+| notification-service | 32 | 67.6% | event → notifications, failures, retries, ownership, controller, every email template; schema |
+| audit-service | 35 | 76.9% | recording, severity, masking, duplicates, summary, admin-only access; schema |
+| api-gateway | 17 | 89.4% | full app with WebTestClient: login, bad password, 401s, `/me`, fallback 503, system health, CORS, trace id; RouteValidator |
 
-**Total: 193 tests.** None need Docker, Kafka or Redis.
+**Total: 193 tests, 69.8% line coverage (2,182 / 3,127 lines).** None need Docker, Kafka or Redis.
+Coverage is measured by JaCoCo during `mvn verify`; the report is at `<module>/target/site/jacoco/index.html`.
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `mvn verify` on JDK 21 on every push and pull request.
 
 `SchemaValidationTest` (in each JPA service) starts a **real embedded PostgreSQL** (zonky
 `embedded-postgres`, downloaded by Maven), runs the Flyway migration and lets Hibernate validate
@@ -1383,6 +1465,48 @@ Building on JDK 23+: the root POM lists Lombok explicitly as an annotation proce
 don't run processors automatically) and uses Lombok 1.18.48. Modules that mock classes set the
 surefire `argLine` `-Dnet.bytebuddy.experimental=true -XX:+EnableDynamicAgentLoading` so Mockito
 works on JDK 26.
+
+### 21.1 Load test (k6)
+
+Script: [`load-tests/k6/meridian.js`](load-tests/k6/meridian.js). Every request goes through the gateway. Four
+scenarios run at the same time: **browse** (accounts, balance, history, `/me`), **transfers**
+(`POST /transfer`), **saga_e2e** (a transfer, then polling until COMPLETED/FAILED, to measure the whole
+saga), and **login**.
+
+```bash
+k6 run load-tests/k6/meridian.js                         # "load" profile, ~5 min
+k6 run -e PROFILE=smoke  load-tests/k6/meridian.js       # 1 min sanity check
+k6 run -e PROFILE=stress load-tests/k6/meridian.js       # ramps to 100 transfers/s
+k6 run -e BASE_URL=http://<server> load-tests/k6/meridian.js
+```
+
+**Results: `load` profile, 2026-11-22.** One Windows laptop ran everything: all 6 services
+(`-Xmx320m` each), Kafka 3.7.1 (KRaft), PostgreSQL 14 and k6 v2.4.0. Read traffic ramped to 30
+iterations/s and transfers to 10/s.
+
+| Endpoint | p50 | p95 | p99 |
+|---|---|---|---|
+| `GET /accounts` | 3.1 ms | 6.3 ms | 9.8 ms |
+| `GET /accounts/{id}/balance` | 2.7 ms | 4.9 ms | 7.8 ms |
+| `GET /transactions` | 3.3 ms | 5.4 ms | 8.5 ms |
+| `GET /auth/me` | 1.3 ms | 2.1 ms | 3.4 ms |
+| `POST /transactions/transfer` (202) | 4.1 ms | 7.6 ms | 11.8 ms |
+| `POST /auth/login` (BCrypt) | 55.2 ms | 65.5 ms | 70.6 ms |
+| **Saga end-to-end** (202 → COMPLETED) | **4.05 s** | **6.07 s** | 6.09 s |
+
+| Total | Value |
+|---|---|
+| HTTP requests | 33,615 in 294 s (114 req/s average) |
+| HTTP error rate | 0.00% (all checks passed, all 7 thresholds passed) |
+| Transfers accepted | 2,470 (8.4/s average, 10/s peak) |
+| Saga outcome | 100% COMPLETED, 0 FAILED, 0 stuck after the run |
+
+How to read it: the synchronous API is single-digit milliseconds, and login is slow on purpose (BCrypt).
+The saga time (~4 s) comes mostly from the **outbox relay polling interval** (`OUTBOX_RELAY_INTERVAL_MS`,
+default 2 s), multiplied by the 2–3 outbox hops of a transfer. Lowering it (or publishing right after
+commit and using the relay only as a fallback) would cut saga latency directly. These numbers come
+from a local run with no network between services, so they are not a capacity limit. The `stress`
+profile is there to find the breaking point.
 
 ---
 
@@ -1450,8 +1574,9 @@ curl -s $GW/api/v1/system/health -H "Authorization: Bearer $ADMIN" | jq .data
 
 ## 23. Known limitations
 
-- The full Docker stack has not been started end to end yet (built and checked file by file, and
-  each service's schema is tested against real PostgreSQL, but not run together with Kafka).
+- The services have run together end to end (all 6 services, Kafka and PostgreSQL started natively,
+  with the k6 load test in [§21.1](#211-load-test-k6) passing). The **Docker Compose** files
+  themselves have not been started end to end yet.
 - Demo users live in gateway config; there is no user registration or user database.
 - An admin cannot move money out of a customer's account through the saga: debits require
   `initiatedBy` to equal the account owner.
