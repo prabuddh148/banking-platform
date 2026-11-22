@@ -57,6 +57,27 @@ jobs:
           name: surefire-reports
           path: "**/target/surefire-reports/"
 
+  helm:
+    name: Helm chart (lint + schema check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - name: helm lint (in-cluster Postgres/Kafka, and external + ingress)
+        run: |
+          helm lint helm/meridian --strict
+          helm lint helm/meridian --strict \
+            --set postgresql.enabled=false,postgresql.external.host=db.example.com \
+            --set kafka.enabled=false,kafka.externalBootstrapServers=kafka.example.com:9092 \
+            --set ingress.enabled=true
+      - name: Render and validate against the Kubernetes schemas
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          helm template meridian helm/meridian --set ingress.enabled=true > rendered.yaml
+          ./kubeconform -strict -summary -kubernetes-version 1.30.0 rendered.yaml
+
   frontend:
     name: Frontend (npm build)
     runs-on: ubuntu-latest
