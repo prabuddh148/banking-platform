@@ -7,7 +7,7 @@ const HIGHLIGHTS = [
   { icon: ScanSearch, title: 'Rule-based fraud engine', text: 'risky payments wait for a human review in the ops console' },
   { icon: FileLock2, title: 'Immutable audit trail', text: 'database triggers reject every UPDATE and DELETE' },
   { icon: KeyRound, title: 'JWT gateway', text: 'and every service re-validates the token (defense in depth)' },
-  { icon: TestTube2, title: '193 automated tests', text: 'incl. schema validation on embedded PostgreSQL' },
+  { icon: TestTube2, title: '195 automated tests', text: 'incl. schema validation on embedded PostgreSQL' },
 ]
 
 const STACK = ['Java 21', 'Spring Boot 3', 'Kafka', 'PostgreSQL', 'Docker', 'React']

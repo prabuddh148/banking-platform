@@ -13,7 +13,7 @@ const HERO_STATS = [
   { value: '6', label: 'Spring Boot services' },
   { value: '4', label: 'Kafka topics + DLTs' },
   { value: '5', label: 'PostgreSQL databases' },
-  { value: '193', label: 'automated tests' },
+  { value: '195', label: 'automated tests' },
 ]
 
 const MAP_FACTS = [
@@ -328,7 +328,7 @@ function Quality() {
           </div>
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2">
-          {[['193', 'tests'], ['7', 'Maven modules'], ['5', 'schema checks']].map(([v, l]) => (
+          {[['195', 'tests'], ['7', 'Maven modules'], ['5', 'schema checks']].map(([v, l]) => (
             <div key={l} className="rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/[0.03]">
               <p className="heading tabular text-xl font-bold tracking-tight">{v}</p>
               <p className="muted text-[11px] leading-tight">{l}</p>
