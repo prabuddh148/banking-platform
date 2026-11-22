@@ -1,0 +1,133 @@
+# End-to-end test of the real Docker Compose stack:
+#   docker compose up --build  →  wait until every service is healthy  →  k6 load test through the
+#   gateway  →  screenshots of the Grafana dashboards  →  logs + results uploaded as an artifact.
+name: E2E (Docker Compose + k6)
+
+on:
+  pull_request:
+    paths:
+      - "docker/**"
+      - "**/Dockerfile"
+      - "load-tests/**"
+      - ".github/workflows/e2e.yml"
+  push:
+    branches: [main]
+    paths:
+      - "docker/**"
+      - "**/Dockerfile"
+      - "load-tests/**"
+      - ".github/workflows/e2e.yml"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: k6 profile (smoke, load, stress)
+        default: load
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  COMPOSE: docker compose -f docker/docker-compose.yml
+  PROFILE: ${{ inputs.profile || 'load' }}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Runner info
+        run: |
+          echo "CPUs: $(nproc)  RAM: $(free -g | awk '/Mem/{print $2}') GB"
+          docker version --format 'Docker {{.Server.Version}}'
+          docker compose version
+          mkdir -p artifacts/logs artifacts/screenshots
+
+      - name: Build images
+        run: ${COMPOSE} build
+
+      - name: Start the stack
+        run: ${COMPOSE} up -d
+
+      - name: Wait until every service is healthy
+        run: |
+          for i in $(seq 1 90); do
+            up=0
+            for p in 8080 8081 8082 8083 8084 8085; do
+              curl -fsS -m 3 "http://localhost:$p/actuator/health" | grep -q '"UP"' && up=$((up+1))
+            done
+            echo "attempt $i: $up/6 services UP"
+            [ "$up" -eq 6 ] && break
+            sleep 10
+          done
+          ${COMPOSE} ps
+          [ "$up" -eq 6 ] || { echo "::error::services did not become healthy"; exit 1; }
+          curl -fsS -m 5 http://localhost:9090/-/ready && echo " prometheus ready"
+          curl -fsS -m 5 http://localhost:3000/api/health && echo " grafana ready"
+
+      - name: Saga smoke check (one transfer must reach COMPLETED)
+        run: |
+          GW=http://localhost:8080
+          T=$(curl -fsS -X POST $GW/api/v1/auth/login -H 'Content-Type: application/json' \
+                -d '{"username":"rahul","password":"password"}' | jq -r .data.accessToken)
+          P=$(curl -fsS -X POST $GW/api/v1/auth/login -H 'Content-Type: application/json' \
+                -d '{"username":"priya","password":"password"}' | jq -r .data.accessToken)
+          SRC=$(curl -fsS -X POST $GW/api/v1/accounts -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+                -d '{"customerName":"Rahul Sharma","customerEmail":"rahul.sharma@example.com","accountType":"SAVINGS","initialDeposit":5000}' | jq -r .data.id)
+          DST=$(curl -fsS -X POST $GW/api/v1/accounts -H "Authorization: Bearer $P" -H 'Content-Type: application/json' \
+                -d '{"customerName":"Priya Patel","customerEmail":"priya.patel@example.com","accountType":"SAVINGS"}' | jq -r .data.id)
+          TXN=$(curl -fsS -X POST $GW/api/v1/transactions/transfer -H "Authorization: Bearer $T" -H 'Content-Type: application/json' \
+                -d "{\"sourceAccountId\":\"$SRC\",\"destinationAccountId\":\"$DST\",\"amount\":1500}" | jq -r .data.id)
+          for i in $(seq 1 30); do
+            S=$(curl -fsS $GW/api/v1/transactions/$TXN/status -H "Authorization: Bearer $T" | jq -r .data.status)
+            echo "transfer $TXN: $S"
+            [ "$S" = COMPLETED ] && break
+            [ "$S" = FAILED ] && { echo "::error::transfer failed"; exit 1; }
+            sleep 1
+          done
+          [ "$S" = COMPLETED ] || { echo "::error::transfer did not complete in 30 s"; exit 1; }
+          curl -fsS $GW/api/v1/accounts/$SRC/balance -H "Authorization: Bearer $T" | jq .data
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: k6 load test (${{ env.PROFILE }} profile)
+        run: |
+          k6 run -q -e PROFILE=${PROFILE} -e SUMMARY_FILE=artifacts/k6-summary-${PROFILE}.json \
+            load-tests/k6/meridian.js 2>&1 | grep -v 'msg=""' | tee artifacts/k6-${PROFILE}.txt
+          exit ${PIPESTATUS[0]}
+
+      - name: Grafana dashboard screenshots
+        if: always()
+        run: |
+          sleep 30   # let Prometheus scrape the last part of the run
+          node load-tests/e2e/grafana-screenshots.mjs artifacts/screenshots
+
+      - name: Collect logs and resource usage
+        if: always()
+        run: |
+          ${COMPOSE} ps > artifacts/compose-ps.txt 2>&1 || true
+          docker stats --no-stream > artifacts/docker-stats.txt 2>&1 || true
+          for s in $(${COMPOSE} config --services); do
+            ${COMPOSE} logs --no-color --tail 2000 "$s" > "artifacts/logs/$s.log" 2>&1 || true
+          done
+          cat artifacts/compose-ps.txt
+          cat artifacts/docker-stats.txt
+          if [ -f artifacts/k6-${PROFILE}.txt ]; then
+            { echo '```'; sed -n '/Meridian k6 results/,$p' artifacts/k6-${PROFILE}.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-results
+          path: artifacts/
+          retention-days: 30
+
+      - name: Stop the stack
+        if: always()
+        run: ${COMPOSE} down -v
