@@ -1,6 +1,7 @@
 # Meridian Banking Platform
 
 [![CI](https://github.com/prabuddh148/banking-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/prabuddh148/banking-platform/actions/workflows/ci.yml)
+[![E2E](https://github.com/prabuddh148/banking-platform/actions/workflows/e2e.yml/badge.svg)](https://github.com/prabuddh148/banking-platform/actions/workflows/e2e.yml)
 ![Java 21](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
 ![Spring Boot 3.3](https://img.shields.io/badge/Spring%20Boot-3.3.4-6DB33F?logo=springboot)
 ![Kafka](https://img.shields.io/badge/Kafka-saga%20%2B%20outbox-231F20?logo=apachekafka)
@@ -28,7 +29,7 @@ and test everything. Deeper write-ups live in [`docs/`](docs/).
 
 | | |
 |---|---|
-| **Run it** | `cd docker && docker compose up -d --build` (then open http://localhost:8080). See [§5](#5-quick-start) |
+| **Run it** | `cd docker && docker compose up -d --build` (then open http://localhost:8080). CI starts this exact stack on every change ([E2E workflow](.github/workflows/e2e.yml)). See [§5](#5-quick-start) |
 | **Tests** | 195 JUnit 5 tests (incl. 20-thread concurrency tests on real PostgreSQL), 70% line coverage (JaCoCo), run by [CI](.github/workflows/ci.yml) on every push. See [§21](#21-testing) |
 | **Load test** | k6, 114 req/s sustained, 0% errors, API p95 < 8 ms, 2,500+ transfers with 100% saga completion. See [Performance](#performance) |
 | **Kubernetes** | Helm chart in [`helm/meridian`](helm/meridian) (probes, secrets, optional in-cluster Postgres/Kafka). Images pushed to GHCR by CD. See [§18](#18-docker-and-infrastructure) |
@@ -43,6 +44,10 @@ These come from the live demo, which runs in mock mode.
 | ![Dashboard](docs/screenshots/dashboard.png) | ![Transfer](docs/screenshots/transfer.png) |
 | **Admin: fraud review** (risk score, triggered rules, saga timeline) | **Admin: live Kafka event stream** |
 | ![Fraud review](docs/screenshots/fraud-review.png) | ![Event stream](docs/screenshots/event-stream.png) |
+
+| **Grafana: service health during the k6 run** (from the Docker E2E run) | **Grafana: transactions, saga and outbox backlog** |
+|---|---|
+| ![Grafana service health](docs/screenshots/grafana-service-health.png) | ![Grafana transaction overview](docs/screenshots/grafana-transaction-overview.png) |
 
 <details><summary>Login page</summary>
 
@@ -71,7 +76,25 @@ removing them on purpose.
 ### Performance
 
 The full backend (API gateway, 5 services, Kafka, PostgreSQL) was load-tested with
-[k6](https://k6.io/) on a single machine. Every request went through the API gateway.
+[k6](https://k6.io/) twice, on a laptop and on the Docker Compose stack in CI. Every request went
+through the API gateway. Both runs used the same script and profile.
+
+| | Run 1: laptop, native | Run 2: Docker Compose in CI |
+|---|---|---|
+| Where | AMD Ryzen 7 7435HS (8C/16T), 16 GB, Windows 11 | GitHub Actions `ubuntu-latest`, 4 vCPU, 15 GB ([E2E workflow](.github/workflows/e2e.yml)) |
+| Stack | services from their jars, Kafka 3.7.1 KRaft, PostgreSQL 14 | `docker compose up --build`: all 15 containers incl. ZooKeeper + Kafka, PostgreSQL 16, Prometheus, Grafana, 768 MB limit per service |
+| Throughput | 114 req/s (33,615 requests) | 113 req/s (33,404 requests) |
+| Error rate | 0% | 0% |
+| p95 reads | 2.1–6.3 ms | 23.8–76.7 ms |
+| p95 `POST /transfer` | 7.6 ms | 111.3 ms |
+| p95 login | 65.5 ms | 336.7 ms |
+| Saga end-to-end | 4.05 s median, 6.07 s p95 | 4.43 s median, 6.51 s p95 |
+| Transfers | 2,470, 100% COMPLETED | 2,442, 100% COMPLETED (0 failed, 0 stuck) |
+| k6 thresholds | 7 / 7 passed | 7 / 7 passed |
+
+The CI runner has 4 vCPUs shared by 15 containers and the load generator, so its latencies are higher.
+The shape of the results is the same: no errors, every saga completes, and saga latency is set by
+the outbox interval (see below). Details of run 1 follow.
 
 **Test setup**
 
@@ -148,6 +171,9 @@ fraud-service publishes its decision directly, without an outbox.
 Each hop waits about half an interval on average (~1 s) and at most a full interval (2 s). Three hops
 give ~3 s of waiting on average and up to ~6 s at worst, plus processing time. That matches the
 measured 4.05 s median and the 6.07 s p95, which sits right at the 3 × 2 s ceiling.
+The Grafana **Outbox backlog** panel from the Docker run shows it directly: during the load, up to
+87 transaction-service events and 27 account-service events wait in the outbox for the next relay tick
+(see [screenshot](docs/screenshots/grafana-transaction-overview.png)).
 
 **How it could be faster**
 
@@ -345,7 +371,7 @@ banking-platform/
 ├── frontend/                    React + Vite customer & admin UI
 ├── load-tests/k6/meridian.js    k6 load test (smoke / load / stress profiles)
 ├── helm/meridian/               Helm chart: services, probes, config, secrets, optional Postgres/Kafka
-├── .github/workflows/           CI (mvn verify, helm lint, frontend build), image push to GHCR, Pages demo
+├── .github/workflows/           CI (mvn verify, helm lint, frontend), Docker E2E + k6, image push to GHCR, Pages demo
 ├── docker/
 │   ├── docker-compose.yml       full stack (infra + 6 services)
 │   ├── docker-compose.dev.yml   infra only (run services from IDE/Maven)
@@ -1678,9 +1704,9 @@ curl -s $GW/api/v1/system/health -H "Authorization: Bearer $ADMIN" | jq .data
 
 ## 23. Known limitations
 
-- The services have run together end to end (all 6 services, Kafka and PostgreSQL started natively,
-  with the k6 load test in [Performance](#performance) passing). The **Docker Compose** files
-  themselves have not been started end to end yet.
+- The Docker Compose stack is verified end to end in CI ([E2E workflow](.github/workflows/e2e.yml)): all
+  containers healthy, a transfer reaches COMPLETED, and the k6 load profile passes. Only
+  `docker-compose.yml` is run there, not the `dev`, `test` or `prod` variants.
 - Demo users live in gateway config; there is no user registration or user database.
 - An admin cannot move money out of a customer's account through the saga: debits require
   `initiatedBy` to equal the account owner.
