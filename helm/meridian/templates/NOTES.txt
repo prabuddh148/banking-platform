@@ -1,0 +1,20 @@
+Meridian is starting. The services need PostgreSQL and Kafka first, so give it a few minutes:
+
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }} -w
+
+{{- if .Values.ingress.enabled }}
+
+API gateway: http://{{ .Values.ingress.host }}
+{{- else }}
+
+Reach the API gateway locally:
+
+  kubectl port-forward svc/{{ include "meridian.serviceHost" (dict "root" . "name" "api-gateway") }} 8080:8080
+  curl -s -X POST http://localhost:8080/api/v1/auth/login -H "Content-Type: application/json" \
+       -d '{"username":"rahul","password":"password"}'
+{{- end }}
+
+{{- if and (not .Values.secrets.existingSecret) (eq .Values.secrets.jwtSecret "change-me-dev-secret-key-at-least-32-bytes-long") }}
+
+WARNING: the dev JWT secret is in use. Set secrets.jwtSecret (or secrets.existingSecret) for anything real.
+{{- end }}
