@@ -34,6 +34,9 @@
         <mapstruct.version>1.5.5.Final</mapstruct.version>
         <!-- Newer Lombok so the build also works on recent JDKs (23+) -->
         <lombok.version>1.18.48</lombok.version>
+        <jacoco.version>0.8.14</jacoco.version>
+        <!-- Filled in by jacoco:prepare-agent; modules append their own flags with @{argLine}. -->
+        <argLine></argLine>
     </properties>
 
     <dependencyManagement>
@@ -95,6 +98,27 @@
                         </exclude>
                     </excludes>
                 </configuration>
+            </plugin>
+            <!-- Test coverage: report at <module>/target/site/jacoco/ (index.html, jacoco.csv). -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

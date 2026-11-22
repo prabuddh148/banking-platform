@@ -1,0 +1,26 @@
+{{- $root := . }}
+# Settings shared by every service (secrets come from the Secret, not from here).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "meridian.fullname" . }}-common
+  labels:
+    {{- include "meridian.labels" . | nindent 4 }}
+data:
+  SPRING_PROFILES_ACTIVE: {{ .Values.common.springProfilesActive | quote }}
+  JAVA_TOOL_OPTIONS: {{ .Values.common.javaToolOptions | quote }}
+  TZ: "UTC"
+  JWT_EXPIRY: {{ .Values.common.jwtExpiry | quote }}
+  TRACING_ENABLED: {{ .Values.common.tracingEnabled | quote }}
+  OUTBOX_RELAY_INTERVAL_MS: {{ .Values.common.outboxRelayIntervalMs | quote }}
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  DB_HOST: {{ include "meridian.postgresHost" . | quote }}
+  DB_PORT: {{ include "meridian.postgresPort" . | quote }}
+  DB_USERNAME: {{ .Values.postgresql.username | quote }}
+  KAFKA_BOOTSTRAP_SERVERS: {{ include "meridian.kafkaBootstrap" . | quote }}
+  # Where the gateway finds each service.
+  {{- range $name, $svc := .Values.services }}
+  {{- if ne $name "api-gateway" }}
+  {{ $name | upper | replace "-SERVICE" "" | replace "-" "_" }}_SERVICE_URL: {{ printf "http://%s:%v" (include "meridian.serviceHost" (dict "root" $root "name" $name)) $svc.port | quote }}
+  {{- end }}
+  {{- end }}

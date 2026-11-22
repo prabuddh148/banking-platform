@@ -140,7 +140,7 @@
                 <configuration>
                     <!-- Byte Buddy (used by Mockito) only officially supports class files up to Java 22/23;
                          this flag lets Mockito mock classes when the tests run on a newer JDK. -->
-                    <argLine>-Dnet.bytebuddy.experimental=true -XX:+EnableDynamicAgentLoading</argLine>
+                    <argLine>@{argLine} -Dnet.bytebuddy.experimental=true -XX:+EnableDynamicAgentLoading</argLine>
                 </configuration>
             </plugin>
         </plugins>

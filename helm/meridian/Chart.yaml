@@ -1,0 +1,10 @@
+apiVersion: v2
+name: meridian
+description: Meridian banking platform - API gateway + 5 Spring Boot services, with optional in-cluster PostgreSQL and Kafka (KRaft)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords: [banking, spring-boot, kafka, saga, microservices]
+home: https://github.com/prabuddh148/banking-platform
+sources:
+  - https://github.com/prabuddh148/banking-platform

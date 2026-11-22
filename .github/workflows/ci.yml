@@ -1,0 +1,95 @@
+# Builds every Maven module and runs all tests (mvn verify), and builds the React frontend.
+# No Docker, Kafka or Redis needed: SchemaValidationTest uses an embedded PostgreSQL.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (mvn verify, JDK 21)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build and test
+        run: mvn -B -ntp verify
+
+      - name: Test report summary
+        if: always()
+        run: |
+          total=0; failed=0
+          for f in */target/surefire-reports/TEST-*.xml; do
+            t=$(grep -o 'tests="[0-9]*"' "$f" | head -1 | tr -dc 0-9)
+            e=$(grep -o 'failures="[0-9]*"' "$f" | head -1 | tr -dc 0-9)
+            r=$(grep -o 'errors="[0-9]*"' "$f" | head -1 | tr -dc 0-9)
+            total=$((total + t)); failed=$((failed + e + r))
+          done
+          echo "### Tests: ${total} run, ${failed} failed" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Coverage summary
+        if: success()
+        run: |
+          for f in */target/site/jacoco/jacoco.csv; do
+            awk -F, -v m="${f%%/*}" 'NR>1 {miss+=$8; cov+=$9} END {if (miss+cov>0) printf "| %s | %.1f%% |\n", m, 100*cov/(miss+cov)}' "$f"
+          done | { echo "| Module | Line coverage |"; echo "|---|---|"; cat; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: "**/target/surefire-reports/"
+
+  helm:
+    name: Helm chart (lint + schema check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - name: helm lint (in-cluster Postgres/Kafka, and external + ingress)
+        run: |
+          helm lint helm/meridian --strict
+          helm lint helm/meridian --strict \
+            --set postgresql.enabled=false,postgresql.external.host=db.example.com \
+            --set kafka.enabled=false,kafka.externalBootstrapServers=kafka.example.com:9092 \
+            --set ingress.enabled=true
+      - name: Render and validate against the Kubernetes schemas
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          helm template meridian helm/meridian --set ingress.enabled=true > rendered.yaml
+          ./kubeconform -strict -summary -kubernetes-version 1.30.0 rendered.yaml
+
+  frontend:
+    name: Frontend (npm build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build

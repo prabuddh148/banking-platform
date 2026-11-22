@@ -45,3 +45,10 @@ docker/data/
 
 # Production secrets for docker-compose.prod.yml
 docker/.env.prod
+
+# Node / frontend build output (also in frontend/.gitignore)
+node_modules/
+dist/
+
+# Load test output (k6 handleSummary JSON)
+k6-summary-*.json
